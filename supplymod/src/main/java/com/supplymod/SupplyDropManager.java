@@ -83,7 +83,6 @@ public class SupplyDropManager {
         crate.setInvisible(true);
         crate.setInvulnerable(true);
         crate.setNoGravity(true);
-        crate.setMarker(false);
         crate.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.BARREL));
         world.spawnEntity(crate);
 
@@ -162,7 +161,7 @@ public class SupplyDropManager {
 
         world.spawnParticles(ParticleTypes.EXPLOSION, landingCenter.x, landingCenter.y + 0.5, landingCenter.z, 1, 0.0, 0.0, 0.0, 0.0);
         world.playSound(null, new BlockPos(drop.x, drop.groundY, drop.z),
-                net.minecraft.sound.SoundEvents.ENTITY_GENERIC_EXPLODE, net.minecraft.sound.SoundCategory.BLOCKS, 1.0f, 0.8f);
+                net.minecraft.sound.SoundEvents.ENTITY_GENERIC_EXPLODE.value(), net.minecraft.sound.SoundCategory.BLOCKS, 1.0f, 0.8f);
 
         for (net.minecraft.server.network.ServerPlayerEntity player : world.getPlayers()) {
             Vec3d playerPos = player.getPos();

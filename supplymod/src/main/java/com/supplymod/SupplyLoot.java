@@ -1,11 +1,7 @@
 package com.supplymod;
 
-import net.minecraft.enchantment.Enchantment;
-import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.entry.RegistryEntry;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,7 +21,7 @@ import java.util.Random;
  *  - Brodawki nether       25%
  *  - Czesc diamentowej zbroi (losowa) 40%
  *  - Zelazo + Zloto        70%
- *  - Zaczarowana ksiazka (losowa) 30%
+ *  - Zaczarowana ksiazka   30% (patrz uwaga nizej)
  *  - Serce (item)          10%
  *  - Ksiega Ulaskawienia    1%
  *  - Netherite scrap        5%
@@ -33,8 +29,7 @@ import java.util.Random;
  *  - Miedz                 80%
  *
  *  Wypelniacze dodane przeze mnie, zeby zrzut nie byl pusty gdy nic
- *  wiekszego nie wypadnie - dobralem szanse tak, zeby byly czeste, ale
- *  mniej ekscytujace niz glowny loot:
+ *  wiekszego nie wypadnie:
  *  - Chleb                 60%
  *  - Strzaly                50%
  *  - Proch strzelniczy      35%
@@ -43,6 +38,14 @@ import java.util.Random;
  *  - Szmaragd               15%
  *  - Perla Endermana        12%
  *  - Siodlo                  8%
+ *
+ *  UWAGA (MC 1.21.1): zaklecia sa teraz elementem dynamicznego rejestru
+ *  danych (podobnie jak biomy) i nie da sie ich pobrac statycznie z klasy
+ *  Registries jak we wczesniejszych wersjach - wymagaja dostepu do
+ *  RegistryWrapper w czasie dzialania serwera. Zeby nie blokowac reszty
+ *  moda, ten wpis daje na razie zwykla (nie-zaklieta) Zaczarowana Ksiazke.
+ *  Realne losowe zaklecie mozna dodac pozniej przekazujac np. ServerWorld
+ *  do rollLoot() i czytajac world.getRegistryManager().get(RegistryKeys.ENCHANTMENT).
  */
 public class SupplyLoot {
 
@@ -57,7 +60,7 @@ public class SupplyLoot {
         roll(random, 0.40, () -> randomDiamondArmorPiece(random), loot);
         roll(random, 0.70, () -> new ItemStack(Items.IRON_INGOT, 2 + random.nextInt(5)), loot);
         roll(random, 0.70, () -> new ItemStack(Items.GOLD_INGOT, 2 + random.nextInt(5)), loot);
-        roll(random, 0.30, () -> randomEnchantedBook(random), loot);
+        roll(random, 0.30, () -> new ItemStack(Items.ENCHANTED_BOOK, 1), loot);
         roll(random, 0.10, () -> new ItemStack(ModItems.HEART_ITEM, 1), loot);
         roll(random, 0.01, () -> new ItemStack(ModItems.BOOK_OF_PARDON, 1), loot);
         roll(random, 0.05, () -> new ItemStack(Items.NETHERITE_SCRAP, 1), loot);
@@ -92,23 +95,4 @@ public class SupplyLoot {
         };
         return pieces[random.nextInt(pieces.length)];
     }
-
-    private static ItemStack randomEnchantedBook(Random random) {
-        List<RegistryEntry.Reference<Enchantment>> all = Registries.ENCHANTMENT.getEntryList(
-                net.minecraft.registry.tag.TagKey.of(Registries.ENCHANTMENT.getKey(),
-                        net.minecraft.util.Identifier.of("minecraft", "in_enchanting_table"))
-        ).map(list -> new ArrayList<>(list)).orElseGet(ArrayList::new);
-
-        ItemStack book = new ItemStack(Items.ENCHANTED_BOOK);
-        if (!all.isEmpty()) {
-            RegistryEntry.Reference<Enchantment> chosen = all.get(random.nextInt(all.size()));
-            int level = 1 + random.nextInt(chosen.value().getMaxLevel());
-            EnchantmentHelper.set(
-                    java.util.Map.of(chosen, level),
-                    book
-            );
-        }
-        return book;
-    }
 }
-
