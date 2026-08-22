@@ -10,6 +10,8 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
@@ -29,15 +31,19 @@ public class ModItems {
     public static Item HEART_ITEM;
 
     public static void register() {
+        RegistryKey<Item> bookKey = RegistryKey.of(RegistryKeys.ITEM,
+                Identifier.of(SupplyMod.MOD_ID, "book_of_pardon"));
         BOOK_OF_PARDON = Registry.register(
                 Registries.ITEM,
-                Identifier.of(SupplyMod.MOD_ID, "book_of_pardon"),
-                new PardonBookItem(new Item.Settings().maxCount(16)));
+                bookKey,
+                new PardonBookItem(new Item.Settings().maxCount(16).registryKey(bookKey)));
 
+        RegistryKey<Item> heartKey = RegistryKey.of(RegistryKeys.ITEM,
+                Identifier.of(SupplyMod.MOD_ID, "heart"));
         HEART_ITEM = Registry.register(
                 Registries.ITEM,
-                Identifier.of(SupplyMod.MOD_ID, "heart"),
-                new HeartItem(new Item.Settings().maxCount(16)));
+                heartKey,
+                new HeartItem(new Item.Settings().maxCount(16).registryKey(heartKey)));
     }
 
     /** Checks whether a stack is protected by the Ksiega Ulaskawienia effect. */
