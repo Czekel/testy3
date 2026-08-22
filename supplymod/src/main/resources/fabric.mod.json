@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "supplymod",
+  "version": "${version}",
+  "name": "Supply Drop Mod",
+  "description": "Losowe zrzuty zaopatrzenia, Ksiega Ulaskawienia i dodatkowe serca.",
+  "authors": ["Ty"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/supplymod/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.supplymod.SupplyMod"
+    ]
+  },
+  "mixins": [
+    "supplymod.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.9",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
+
