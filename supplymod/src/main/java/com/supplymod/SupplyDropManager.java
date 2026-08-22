@@ -16,7 +16,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.entity.boss.BossBar;
-import net.minecraft.server.network.ServerBossBar;
+import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.util.Formatting;
 import net.minecraft.world.World;
 
@@ -238,4 +238,3 @@ public class SupplyDropManager {
         }
     }
 }
-
