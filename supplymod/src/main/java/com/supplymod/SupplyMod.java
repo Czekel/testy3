@@ -1,9 +1,13 @@
 package com.supplymod;
 
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.network.ServerPlayerEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,8 +24,6 @@ public class SupplyMod implements ModInitializer {
 
     // Items saved here after death (Ksiega Ulaskawienia effect) waiting to be
     // returned to the player on respawn. Keyed by player UUID.
-    // Populated by PlayerDropInventoryMixin when it rescues a tagged item
-    // right before vanilla would drop it on death.
     public static final Map<UUID, List<ItemStack>> PARDONED_ITEMS = new ConcurrentHashMap<>();
 
     @Override
@@ -34,6 +36,27 @@ public class SupplyMod implements ModInitializer {
         // Daily 20% roll for a supply drop.
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             server.getWorlds().forEach(SupplyDropManager::onWorldTick);
+        });
+
+        // Ksiega Ulaskawienia: right before a fatal hit actually kills the
+        // player, pull any tagged item out of their inventory so vanilla's
+        // drop-on-death logic never sees it (it's simply not in the
+        // inventory anymore by the time death processing runs). This uses
+        // only a standard, supported Fabric API event - no mixin needed.
+        ServerLivingEntityEvents.ALLOW_DEATH.register((entity, damageSource, damageAmount) -> {
+            if (entity instanceof ServerPlayerEntity player) {
+                PlayerInventory inv = player.getInventory();
+                for (int i = 0; i < inv.size(); i++) {
+                    ItemStack stack = inv.getStack(i);
+                    if (ModItems.isPardoned(stack)) {
+                        ItemStack saved = stack.copy();
+                        saved.remove(DataComponentTypes.CUSTOM_DATA);
+                        stashFor(player.getUuid()).add(saved);
+                        inv.setStack(i, ItemStack.EMPTY);
+                    }
+                }
+            }
+            return true; // never cancel death itself, only rescue items
         });
 
         // Restore items protected by Ksiega Ulaskawienia after respawn.
