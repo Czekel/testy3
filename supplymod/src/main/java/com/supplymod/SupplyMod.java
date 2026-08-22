@@ -4,7 +4,6 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,6 +20,8 @@ public class SupplyMod implements ModInitializer {
 
     // Items saved here after death (Ksiega Ulaskawienia effect) waiting to be
     // returned to the player on respawn. Keyed by player UUID.
+    // Populated by PlayerDropInventoryMixin when it rescues a tagged item
+    // right before vanilla would drop it on death.
     public static final Map<UUID, List<ItemStack>> PARDONED_ITEMS = new ConcurrentHashMap<>();
 
     @Override
@@ -55,4 +56,3 @@ public class SupplyMod implements ModInitializer {
         return PARDONED_ITEMS.computeIfAbsent(playerId, k -> new ArrayList<>());
     }
 }
-
