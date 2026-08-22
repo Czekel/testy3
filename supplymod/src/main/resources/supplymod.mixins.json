@@ -4,7 +4,6 @@
   "package": "com.supplymod.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "AnvilScreenHandlerMixin",
     "PlayerDropInventoryMixin"
   ],
   "client": [],
@@ -13,4 +12,3 @@
     "defaultRequire": 1
   }
 }
-
