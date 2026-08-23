@@ -27,7 +27,7 @@ import java.util.Random;
  * Handles the "Zrzut Zaopatrzenia" (Supply Drop) feature:
  * - 20% chance each in-game day that a drop occurs
  * - random coordinates, announced to all players + shown on a boss bar
- * - falls for 5 minutes, then stays sealed for 5 more minutes
+ * - falls until it hits solid ground (checked every tick), then stays sealed for 5 minutes
  * - on landing, knocks back any nearby player (shockwave effect)
  * - opens into a barrel full of loot rolled from SupplyLoot percentages
  */
@@ -36,10 +36,10 @@ public class SupplyDropManager {
     private static final Random RANDOM = new Random();
 
     private static final double DROP_CHANCE = 0.20; // 20%
-    private static final int FALL_TICKS = 5 * 60 * 20;  // 5 minutes
     private static final int SEAL_TICKS = 5 * 60 * 20;  // 5 minutes
     private static final int SEARCH_RADIUS = 1000; // blocks around world spawn
     private static final int FALL_START_Y = 250;
+    private static final double FALL_SPEED = 0.5; // blocks per tick while falling
     private static final double KNOCKBACK_RADIUS = 5.0;  // blocks - who gets pushed
     private static final double KNOCKBACK_STRENGTH = 1.8; // tuned to send ~5 blocks
 
@@ -69,17 +69,16 @@ public class SupplyDropManager {
     }
 
     private static void startDrop(ServerWorld world) {
-        // Using world origin as the reference point (0, ~64, 0) instead of the
-        // configured world spawn - the drop location is randomized within
-        // SEARCH_RADIUS anyway, so this has no meaningful gameplay impact.
         BlockPos spawn = BlockPos.ORIGIN;
         int x = spawn.getX() + RANDOM.nextInt(SEARCH_RADIUS * 2) - SEARCH_RADIUS;
         int z = spawn.getZ() + RANDOM.nextInt(SEARCH_RADIUS * 2) - SEARCH_RADIUS;
-        int groundY = world.getTopY(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, x, z);
+
+        // Force the chunk to load/generate so block checks during the fall work correctly.
+        world.getChunk(x >> 4, z >> 4);
 
         ArmorStandEntity crate = new ArmorStandEntity(EntityType.ARMOR_STAND, world);
         crate.updatePosition(x + 0.5, FALL_START_Y, z + 0.5);
-        crate.setInvisible(true);
+        crate.setInvisible(false);
         crate.setInvulnerable(true);
         crate.setNoGravity(true);
         crate.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.BARREL));
@@ -97,7 +96,7 @@ public class SupplyDropManager {
                     .formatted(Formatting.GOLD), false);
         }
 
-        ActiveDrop drop = new ActiveDrop(crate, bossBar, x, groundY, z);
+        ActiveDrop drop = new ActiveDrop(crate, bossBar, x, z);
         activeDrops.add(drop);
     }
 
@@ -122,23 +121,22 @@ public class SupplyDropManager {
     }
 
     private static void tickFalling(ServerWorld world, ActiveDrop drop) {
-        double progress = Math.min(1.0, drop.ticksElapsed / (double) FALL_TICKS);
-        double y = FALL_START_Y + (drop.groundY - FALL_START_Y) * progress;
+        double currentY = drop.crate.getY();
+        double nextY = currentY - FALL_SPEED;
 
-        drop.crate.updatePosition(drop.x + 0.5, y, drop.z + 0.5);
+        BlockPos checkPos = new BlockPos(drop.x, (int) Math.floor(nextY), drop.z);
 
-        drop.bossBar.setPercent((float) (1.0 - progress));
-        drop.bossBar.setName(Text.literal(
-                "Zrzut leci... X=" + drop.x + " Z=" + drop.z + " (" + (int) ((1 - progress) * 100) + "%)"));
+        // Stop as soon as the block just below the next position is solid,
+        // or we hit the bottom of the world - whichever comes first.
+        boolean hitGround = !world.getBlockState(checkPos).isAir() || nextY <= world.getBottomY();
 
-        if (world.getTime() % 20 == 0) {
-            world.spawnParticles(ParticleTypes.CLOUD, drop.x + 0.5, y + 1, drop.z + 0.5, 3, 0.2, 0.2, 0.2, 0.01);
-        }
+        if (hitGround) {
+            int groundY = checkPos.getY() + 1;
+            drop.groundY = groundY;
+            drop.crate.updatePosition(drop.x + 0.5, groundY, drop.z + 0.5);
 
-        if (drop.ticksElapsed >= FALL_TICKS) {
             drop.phase = Phase.SEALED;
             drop.ticksElapsed = 0;
-            drop.crate.updatePosition(drop.x + 0.5, drop.groundY, drop.z + 0.5);
 
             knockBackNearbyPlayers(world, drop);
 
@@ -146,6 +144,18 @@ public class SupplyDropManager {
                 player.sendMessage(Text.literal("Zrzut zaopatrzenia wyladowal! Otworzy sie za 5 minut.")
                         .formatted(Formatting.YELLOW), false);
             }
+            return;
+        }
+
+        drop.crate.updatePosition(drop.x + 0.5, nextY, drop.z + 0.5);
+
+        double progress = Math.min(1.0, (FALL_START_Y - nextY) / (double) FALL_START_Y);
+        drop.bossBar.setPercent((float) (1.0 - progress));
+        drop.bossBar.setName(Text.literal(
+                "Zrzut leci... X=" + drop.x + " Z=" + drop.z));
+
+        if (world.getTime() % 20 == 0) {
+            world.spawnParticles(ParticleTypes.CLOUD, drop.x + 0.5, nextY + 1, drop.z + 0.5, 3, 0.2, 0.2, 0.2, 0.01);
         }
     }
 
@@ -222,16 +232,16 @@ public class SupplyDropManager {
     private static class ActiveDrop {
         final ArmorStandEntity crate;
         final ServerBossBar bossBar;
-        final int x, groundY, z;
+        final int x, z;
+        int groundY;
         Phase phase = Phase.FALLING;
         int ticksElapsed = 0;
 
-        ActiveDrop(ArmorStandEntity crate, ServerBossBar bossBar, int x, int groundY, int z) {
+        ActiveDrop(ArmorStandEntity crate, ServerBossBar bossBar, int x, int z) {
             this.crate = crate;
             this.bossBar = bossBar;
             this.x = x;
-            this.groundY = groundY;
             this.z = z;
         }
     }
-    }
+            }
