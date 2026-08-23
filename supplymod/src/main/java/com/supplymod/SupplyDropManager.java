@@ -69,7 +69,7 @@ public class SupplyDropManager {
     }
 
     private static void startDrop(ServerWorld world) {
-        BlockPos spawn = world.getSpawnPos();
+        BlockPos spawn = world.getLevelProperties().getSpawnPos();
         int x = spawn.getX() + RANDOM.nextInt(SEARCH_RADIUS * 2) - SEARCH_RADIUS;
         int z = spawn.getZ() + RANDOM.nextInt(SEARCH_RADIUS * 2) - SEARCH_RADIUS;
         int groundY = world.getTopY(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, x, z);
