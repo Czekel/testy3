@@ -13,16 +13,14 @@ import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.text.Text;
+import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.TypedActionResult;
 import net.minecraft.world.World;
 
 public class ModItems {
 
-    // Max health player can reach with heart items: 20 hearts = 40.0 HP.
     public static final double MAX_HEALTH_CAP = 40.0;
-    // Each Heart item grants 2.0 HP (1 heart).
     public static final double HEALTH_PER_HEART_ITEM = 2.0;
 
     public static final String PARDON_KEY = "supplymod_pardoned";
@@ -46,7 +44,6 @@ public class ModItems {
                 new HeartItem(new Item.Settings().maxCount(16).registryKey(heartKey)));
     }
 
-    /** Checks whether a stack is protected by the Ksiega Ulaskawienia effect. */
     public static boolean isPardoned(ItemStack stack) {
         if (stack.isEmpty()) {
             return false;
@@ -55,12 +52,6 @@ public class ModItems {
         return data != null && data.copyNbt().getBoolean(PARDON_KEY);
     }
 
-    /**
-     * Ksiega Ulaskawienia - no anvil needed. Hold the item you want to
-     * protect in one hand and the book in the other, then right-click with
-     * the book: it tags the OTHER hand's item and is consumed.
-     * Always shows the vanilla "enchantment glint" shimmer.
-     */
     public static class PardonBookItem extends Item {
         public PardonBookItem(Settings settings) {
             super(settings);
@@ -72,11 +63,11 @@ public class ModItems {
         }
 
         @Override
-        public TypedActionResult<ItemStack> use(World world, PlayerEntity player, Hand hand) {
+        public ActionResult use(World world, PlayerEntity player, Hand hand) {
             ItemStack book = player.getStackInHand(hand);
 
-            if (world.isClient) {
-                return TypedActionResult.success(book);
+            if (world.isClient()) {
+                return ActionResult.SUCCESS;
             }
 
             Hand otherHand = (hand == Hand.MAIN_HAND) ? Hand.OFF_HAND : Hand.MAIN_HAND;
@@ -84,11 +75,11 @@ public class ModItems {
 
             if (target.isEmpty()) {
                 player.sendMessage(Text.literal("Trzymaj w drugiej rece przedmiot, ktory chcesz chronic."), true);
-                return TypedActionResult.fail(book);
+                return ActionResult.FAIL;
             }
             if (target.isOf(BOOK_OF_PARDON)) {
                 player.sendMessage(Text.literal("Nie mozesz oznaczyc drugiej Ksiegi Ulaskawienia."), true);
-                return TypedActionResult.fail(book);
+                return ActionResult.FAIL;
             }
 
             NbtCompound nbt = new NbtCompound();
@@ -100,35 +91,31 @@ public class ModItems {
             if (!player.getAbilities().creativeMode) {
                 book.decrement(1);
             }
-            return TypedActionResult.success(book);
+            return ActionResult.SUCCESS;
         }
     }
 
-    /**
-     * Custom item: consuming it permanently raises the player's max health by
-     * one heart (2.0 HP), up to the 20-heart (40 HP) cap.
-     */
     public static class HeartItem extends Item {
         public HeartItem(Settings settings) {
             super(settings);
         }
 
         @Override
-        public TypedActionResult<ItemStack> use(World world, PlayerEntity player, Hand hand) {
+        public ActionResult use(World world, PlayerEntity player, Hand hand) {
             ItemStack stack = player.getStackInHand(hand);
-            if (world.isClient) {
-                return TypedActionResult.success(stack);
+            if (world.isClient()) {
+                return ActionResult.SUCCESS;
             }
 
-            EntityAttributeInstance attr = player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
+            EntityAttributeInstance attr = player.getAttributeInstance(EntityAttributes.MAX_HEALTH);
             if (attr == null) {
-                return TypedActionResult.pass(stack);
+                return ActionResult.PASS;
             }
 
             double currentBase = attr.getBaseValue();
             if (currentBase >= MAX_HEALTH_CAP) {
                 player.sendMessage(Text.literal("Masz juz maksymalna liczbe serc (20)."), true);
-                return TypedActionResult.fail(stack);
+                return ActionResult.FAIL;
             }
 
             double newBase = Math.min(MAX_HEALTH_CAP, currentBase + HEALTH_PER_HEART_ITEM);
@@ -141,7 +128,7 @@ public class ModItems {
             if (!player.getAbilities().creativeMode) {
                 stack.decrement(1);
             }
-            return TypedActionResult.success(stack);
+            return ActionResult.SUCCESS;
         }
     }
 }
