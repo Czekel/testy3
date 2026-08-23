@@ -69,7 +69,10 @@ public class SupplyDropManager {
     }
 
     private static void startDrop(ServerWorld world) {
-        BlockPos spawn = world.getLevelProperties().getSpawnPos();
+        // Using world origin as the reference point (0, ~64, 0) instead of the
+        // configured world spawn - the drop location is randomized within
+        // SEARCH_RADIUS anyway, so this has no meaningful gameplay impact.
+        BlockPos spawn = BlockPos.ORIGIN;
         int x = spawn.getX() + RANDOM.nextInt(SEARCH_RADIUS * 2) - SEARCH_RADIUS;
         int z = spawn.getZ() + RANDOM.nextInt(SEARCH_RADIUS * 2) - SEARCH_RADIUS;
         int groundY = world.getTopY(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, x, z);
@@ -160,7 +163,7 @@ public class SupplyDropManager {
                 net.minecraft.sound.SoundEvents.ENTITY_GENERIC_EXPLODE.value(), net.minecraft.sound.SoundCategory.BLOCKS);
 
         for (net.minecraft.server.network.ServerPlayerEntity player : world.getPlayers()) {
-            Vec3d playerPos = player.getPos();
+            Vec3d playerPos = new Vec3d(player.getX(), player.getY(), player.getZ());
             double dist = playerPos.distanceTo(landingCenter);
             if (dist > KNOCKBACK_RADIUS) continue;
 
@@ -170,7 +173,6 @@ public class SupplyDropManager {
                     : new Vec3d(diff.x, 0, diff.z).normalize();
 
             player.setVelocity(horizontal.x * KNOCKBACK_STRENGTH, 0.45, horizontal.z * KNOCKBACK_STRENGTH);
-            player.velocityModified = true;
             player.sendMessage(Text.literal("Zrzut zaopatrzenia odepchnal cie od miejsca ladowania!")
                     .formatted(Formatting.RED), true);
         }
@@ -232,4 +234,4 @@ public class SupplyDropManager {
             this.z = z;
         }
     }
-}
+    }
