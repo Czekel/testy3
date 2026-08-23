@@ -4,13 +4,9 @@ import net.minecraft.block.Blocks;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.decoration.ArmorStandEntity;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.particle.ParticleTypes;
-import net.minecraft.scoreboard.number.BlankNumberFormat;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
@@ -40,11 +36,11 @@ public class SupplyDropManager {
     private static final Random RANDOM = new Random();
 
     private static final double DROP_CHANCE = 0.20; // 20%
-    private static final int FALL_TICKS = 5 * 60 * 20;   // 5 minutes
-    private static final int SEAL_TICKS = 5 * 60 * 20;   // 5 minutes
+    private static final int FALL_TICKS = 5 * 60 * 20;  // 5 minutes
+    private static final int SEAL_TICKS = 5 * 60 * 20;  // 5 minutes
     private static final int SEARCH_RADIUS = 1000; // blocks around world spawn
     private static final int FALL_START_Y = 250;
-    private static final double KNOCKBACK_RADIUS = 5.0;   // blocks - who gets pushed
+    private static final double KNOCKBACK_RADIUS = 5.0;  // blocks - who gets pushed
     private static final double KNOCKBACK_STRENGTH = 1.8; // tuned to send ~5 blocks
 
     private static final Map<ServerWorld, Long> lastCheckedDay = new HashMap<>();
@@ -106,7 +102,7 @@ public class SupplyDropManager {
         Iterator<ActiveDrop> it = activeDrops.iterator();
         while (it.hasNext()) {
             ActiveDrop drop = it.next();
-            if (drop.crate.getWorld() != world) continue;
+            if (drop.crate.getEntityWorld() != world) continue;
 
             drop.ticksElapsed++;
 
@@ -161,7 +157,7 @@ public class SupplyDropManager {
 
         world.spawnParticles(ParticleTypes.EXPLOSION, landingCenter.x, landingCenter.y + 0.5, landingCenter.z, 1, 0.0, 0.0, 0.0, 0.0);
         world.playSound(null, new BlockPos(drop.x, drop.groundY, drop.z),
-                net.minecraft.sound.SoundEvents.ENTITY_GENERIC_EXPLODE.value(), net.minecraft.sound.SoundCategory.BLOCKS, 1.0f, 0.8f);
+                net.minecraft.sound.SoundEvents.ENTITY_GENERIC_EXPLODE.value(), net.minecraft.sound.SoundCategory.BLOCKS);
 
         for (net.minecraft.server.network.ServerPlayerEntity player : world.getPlayers()) {
             Vec3d playerPos = player.getPos();
