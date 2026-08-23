@@ -49,7 +49,7 @@ public class ModItems {
             return false;
         }
         NbtComponent data = stack.get(DataComponentTypes.CUSTOM_DATA);
-        return data != null && data.copyNbt().getBoolean(PARDON_KEY);
+        return data != null && data.copyNbt().getBoolean(PARDON_KEY, false);
     }
 
     public static class PardonBookItem extends Item {
