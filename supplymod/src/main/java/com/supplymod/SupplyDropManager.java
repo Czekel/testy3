@@ -1,4 +1,4 @@
-package com.supplymod;
+ package com.supplymod;
 
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.EntityType;
@@ -17,6 +17,7 @@ import net.minecraft.util.Formatting;
 import net.minecraft.world.World;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -28,8 +29,10 @@ import java.util.Random;
  * - 20% chance each in-game day that a drop occurs
  * - random coordinates, announced to all players + shown on a boss bar
  * - falls until it hits solid ground (checked every tick), then stays sealed for 5 minutes
- * - on landing, knocks back any nearby player (shockwave effect)
- * - opens into a barrel full of loot rolled from SupplyLoot percentages
+ * - on landing, knocks back any nearby player (shockwave effect) and the crate
+ *   becomes invisible (only the boss bar + particles mark the spot) until it opens
+ * - opens into a barrel full of loot rolled from SupplyLoot percentages,
+ *   placed in randomized slots instead of filling from slot 0 onward
  */
 public class SupplyDropManager {
 
@@ -39,7 +42,7 @@ public class SupplyDropManager {
     private static final int SEAL_TICKS = 5 * 60 * 20;  // 5 minutes
     private static final int SEARCH_RADIUS = 1000; // blocks around world spawn
     private static final int FALL_START_Y = 250;
-    private static final double FALL_SPEED = 0.5; // blocks per tick while falling
+    private static final double FALL_SPEED = 0.2; // blocks per tick while falling (slower, more visible)
     private static final double KNOCKBACK_RADIUS = 5.0;  // blocks - who gets pushed
     private static final double KNOCKBACK_STRENGTH = 1.8; // tuned to send ~5 blocks
 
@@ -135,6 +138,10 @@ public class SupplyDropManager {
             drop.groundY = groundY;
             drop.crate.updatePosition(drop.x + 0.5, groundY, drop.z + 0.5);
 
+            // Hide the floating armor stand once it "lands" - the boss bar and
+            // particles are enough to mark the spot while it's sealed.
+            drop.crate.setInvisible(true);
+
             drop.phase = Phase.SEALED;
             drop.ticksElapsed = 0;
 
@@ -154,7 +161,7 @@ public class SupplyDropManager {
         drop.bossBar.setName(Text.literal(
                 "Zrzut leci... X=" + drop.x + " Z=" + drop.z));
 
-        if (world.getTime() % 20 == 0) {
+        if (world.getTime() % 10 == 0) {
             world.spawnParticles(ParticleTypes.CLOUD, drop.x + 0.5, nextY + 1, drop.z + 0.5, 3, 0.2, 0.2, 0.2, 0.01);
         }
     }
@@ -211,10 +218,19 @@ public class SupplyDropManager {
 
         if (world.getBlockEntity(pos) instanceof net.minecraft.block.entity.BarrelBlockEntity barrel) {
             List<ItemStack> loot = SupplyLoot.rollLoot(RANDOM);
-            int slot = 0;
+
+            // Spread items across random slots instead of filling from slot 0.
+            List<Integer> slots = new ArrayList<>();
+            for (int i = 0; i < barrel.size(); i++) {
+                slots.add(i);
+            }
+            Collections.shuffle(slots, RANDOM);
+
+            int i = 0;
             for (ItemStack stack : loot) {
-                if (slot >= barrel.size()) break;
-                barrel.setStack(slot++, stack);
+                if (i >= slots.size()) break;
+                barrel.setStack(slots.get(i), stack);
+                i++;
             }
         }
 
@@ -244,4 +260,4 @@ public class SupplyDropManager {
             this.z = z;
         }
     }
-            }
+                }  
