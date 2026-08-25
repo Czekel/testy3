@@ -1,4 +1,4 @@
- package com.supplymod;
+package com.supplymod;
 
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.EntityType;
@@ -28,6 +28,10 @@ import java.util.Random;
  * Handles the "Zrzut Zaopatrzenia" (Supply Drop) feature:
  * - 20% chance each in-game day that a drop occurs
  * - random coordinates, announced to all players + shown on a boss bar
+ * - the boss bar text acts as a lightweight "waypoint": it shows the live
+ *   distance (in blocks) from the nearest player and the remaining time
+ * - also sends a Xaero's Minimap-compatible chat waypoint message, which
+ *   players with that mod installed can click to add a real waypoint
  * - falls until it hits solid ground (checked every tick), then stays sealed for 5 minutes
  * - on landing, knocks back any nearby player (shockwave effect) and the crate
  *   becomes invisible (only the boss bar + particles mark the spot) until it opens
@@ -42,7 +46,7 @@ public class SupplyDropManager {
     private static final int SEAL_TICKS = 5 * 60 * 20;  // 5 minutes
     private static final int SEARCH_RADIUS = 1000; // blocks around world spawn
     private static final int FALL_START_Y = 250;
-    private static final double FALL_SPEED = 0.2; // blocks per tick while falling (slower, more visible)
+    private static final double FALL_SPEED = 0.2; // blocks per tick while falling
     private static final double KNOCKBACK_RADIUS = 5.0;  // blocks - who gets pushed
     private static final double KNOCKBACK_STRENGTH = 1.8; // tuned to send ~5 blocks
 
@@ -76,7 +80,6 @@ public class SupplyDropManager {
         int x = spawn.getX() + RANDOM.nextInt(SEARCH_RADIUS * 2) - SEARCH_RADIUS;
         int z = spawn.getZ() + RANDOM.nextInt(SEARCH_RADIUS * 2) - SEARCH_RADIUS;
 
-        // Force the chunk to load/generate so block checks during the fall work correctly.
         world.getChunk(x >> 4, z >> 4);
 
         ArmorStandEntity crate = new ArmorStandEntity(EntityType.ARMOR_STAND, world);
@@ -88,10 +91,12 @@ public class SupplyDropManager {
         world.spawnEntity(crate);
 
         ServerBossBar bossBar = new ServerBossBar(
-                Text.literal("Zrzut zaopatrzenia: X=" + x + " Z=" + z),
+                Text.literal("Zrzut Zaopatrzenia"),
                 BossBar.Color.YELLOW,
                 BossBar.Style.NOTCHED_10);
         bossBar.setPercent(1.0f);
+
+        int groundYEstimate = world.getTopY(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, x, z);
 
         for (net.minecraft.server.network.ServerPlayerEntity player : world.getPlayers()) {
             bossBar.addPlayer(player);
@@ -99,8 +104,36 @@ public class SupplyDropManager {
                     .formatted(Formatting.GOLD), false);
         }
 
+        sendXaeroWaypoint(world, x, groundYEstimate, z);
+
         ActiveDrop drop = new ActiveDrop(crate, bossBar, x, z);
         activeDrops.add(drop);
+    }
+
+    /**
+     * Sends a Xaero's Minimap-compatible waypoint share message to chat.
+     * Players who have Xaero's Minimap installed will see a clickable [Add]
+     * button that places a real waypoint at the drop's location. Players
+     * without the mod just see this as harmless plain text.
+     */
+    private static void sendXaeroWaypoint(ServerWorld world, int x, int groundY, int z) {
+        String dimensionId;
+        if (world.getRegistryKey() == net.minecraft.world.World.OVERWORLD) {
+            dimensionId = "Internal-overworld";
+        } else if (world.getRegistryKey() == net.minecraft.world.World.NETHER) {
+            dimensionId = "Internal-the_nether";
+        } else if (world.getRegistryKey() == net.minecraft.world.World.END) {
+            dimensionId = "Internal-the_end";
+        } else {
+            dimensionId = "Internal-overworld";
+        }
+
+        String waypointMsg = "xaero-waypoint:Zrzut_Zaopatrzenia:ZZ:" + x + ":" + groundY + ":" + z
+                + ":2:false:0:" + dimensionId;
+
+        for (net.minecraft.server.network.ServerPlayerEntity player : world.getPlayers()) {
+            player.sendMessage(Text.literal(waypointMsg), false);
+        }
     }
 
     private static void tickActiveDrops(ServerWorld world) {
@@ -123,23 +156,38 @@ public class SupplyDropManager {
         }
     }
 
+    /**
+     * Builds the "waypoint" style label shown on the boss bar: the drop's
+     * name plus the live distance (in blocks) from the nearest online
+     * player, so it acts like a simple in-HUD marker without needing a
+     * dedicated waypoint/compass system.
+     */
+    private static String buildWaypointLabel(ServerWorld world, ActiveDrop drop, String suffix) {
+        double nearestDist = Double.MAX_VALUE;
+        for (net.minecraft.server.network.ServerPlayerEntity player : world.getPlayers()) {
+            double dist = new Vec3d(player.getX(), player.getY(), player.getZ())
+                    .distanceTo(new Vec3d(drop.x + 0.5, player.getY(), drop.z + 0.5));
+            if (dist < nearestDist) {
+                nearestDist = dist;
+            }
+        }
+
+        String distText = (nearestDist == Double.MAX_VALUE) ? "?" : (int) Math.round(nearestDist) + "m";
+        return "Zrzut Zaopatrzenia | " + distText + (suffix.isEmpty() ? "" : " | " + suffix);
+    }
+
     private static void tickFalling(ServerWorld world, ActiveDrop drop) {
         double currentY = drop.crate.getY();
         double nextY = currentY - FALL_SPEED;
 
         BlockPos checkPos = new BlockPos(drop.x, (int) Math.floor(nextY), drop.z);
 
-        // Stop as soon as the block just below the next position is solid,
-        // or we hit the bottom of the world - whichever comes first.
         boolean hitGround = !world.getBlockState(checkPos).isAir() || nextY <= world.getBottomY();
 
         if (hitGround) {
             int groundY = checkPos.getY() + 1;
             drop.groundY = groundY;
             drop.crate.updatePosition(drop.x + 0.5, groundY, drop.z + 0.5);
-
-            // Hide the floating armor stand once it "lands" - the boss bar and
-            // particles are enough to mark the spot while it's sealed.
             drop.crate.setInvisible(true);
 
             drop.phase = Phase.SEALED;
@@ -158,20 +206,16 @@ public class SupplyDropManager {
 
         double progress = Math.min(1.0, (FALL_START_Y - nextY) / (double) FALL_START_Y);
         drop.bossBar.setPercent((float) (1.0 - progress));
-        drop.bossBar.setName(Text.literal(
-                "Zrzut leci... X=" + drop.x + " Z=" + drop.z));
+
+        if (world.getTime() % 20 == 0) {
+            drop.bossBar.setName(Text.literal(buildWaypointLabel(world, drop, "")));
+        }
 
         if (world.getTime() % 10 == 0) {
             world.spawnParticles(ParticleTypes.CLOUD, drop.x + 0.5, nextY + 1, drop.z + 0.5, 3, 0.2, 0.2, 0.2, 0.01);
         }
     }
 
-    /**
-     * Pushes back any player standing too close when the crate lands - like
-     * a small shockwave. Uses velocity (not teleport) so players don't clip
-     * through walls/terrain; the strength below is tuned to send an
-     * unobstructed player roughly ~5 blocks away.
-     */
     private static void knockBackNearbyPlayers(ServerWorld world, ActiveDrop drop) {
         Vec3d landingCenter = new Vec3d(drop.x + 0.5, drop.groundY, drop.z + 0.5);
 
@@ -198,9 +242,12 @@ public class SupplyDropManager {
     private static void tickSealed(ServerWorld world, ActiveDrop drop) {
         double progress = Math.min(1.0, drop.ticksElapsed / (double) SEAL_TICKS);
         drop.bossBar.setPercent((float) progress);
-        drop.bossBar.setName(Text.literal(
-                "Zrzut zaopatrzenia (zamkniety) X=" + drop.x + " Z=" + drop.z
-                        + " - otwarcie za " + ((SEAL_TICKS - drop.ticksElapsed) / 20) + "s"));
+
+        if (world.getTime() % 20 == 0) {
+            int secondsLeft = (SEAL_TICKS - drop.ticksElapsed) / 20;
+            String timeText = (secondsLeft >= 60) ? (secondsLeft / 60) + "min" : secondsLeft + "s";
+            drop.bossBar.setName(Text.literal(buildWaypointLabel(world, drop, timeText)));
+        }
 
         if (world.getTime() % 40 == 0) {
             world.spawnParticles(ParticleTypes.END_ROD, drop.x + 0.5, drop.groundY + 1, drop.z + 0.5, 2, 0.3, 0.3, 0.3, 0.01);
@@ -219,7 +266,6 @@ public class SupplyDropManager {
         if (world.getBlockEntity(pos) instanceof net.minecraft.block.entity.BarrelBlockEntity barrel) {
             List<ItemStack> loot = SupplyLoot.rollLoot(RANDOM);
 
-            // Spread items across random slots instead of filling from slot 0.
             List<Integer> slots = new ArrayList<>();
             for (int i = 0; i < barrel.size(); i++) {
                 slots.add(i);
@@ -260,4 +306,4 @@ public class SupplyDropManager {
             this.z = z;
         }
     }
-                }  
+             }
