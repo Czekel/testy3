@@ -5,6 +5,8 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.component.DataComponentTypes;
+import net.minecraft.entity.attribute.EntityAttributeInstance;
+import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -18,13 +20,16 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class SupplyMod implements ModInitializer {
-
     public static final String MOD_ID = "supplymod";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     // Items saved here after death (Ksiega Ulaskawienia effect) waiting to be
     // returned to the player on respawn. Keyed by player UUID.
     public static final Map<UUID, List<ItemStack>> PARDONED_ITEMS = new ConcurrentHashMap<>();
+
+    // How many hearts (max health) a player loses on death.
+    // Matches the amount granted by a single Heart item.
+    private static final double HEARTS_LOST_ON_DEATH = ModItems.HEALTH_PER_HEART_ITEM;
 
     @Override
     public void onInitialize() {
@@ -55,8 +60,23 @@ public class SupplyMod implements ModInitializer {
                         inv.setStack(i, ItemStack.EMPTY);
                     }
                 }
+
+                // Lose hearts gained from Heart items, back down to the
+                // vanilla default (20.0 base = 10 hearts). Bonus hearts
+                // above that floor are removed one Heart item's worth
+                // per death; the vanilla base is never reduced further.
+                EntityAttributeInstance attr = player.getAttributeInstance(EntityAttributes.MAX_HEALTH);
+                if (attr != null) {
+                    double currentBase = attr.getBaseValue();
+                    double newBase = Math.max(20.0, currentBase - HEARTS_LOST_ON_DEATH);
+                    if (newBase < currentBase) {
+                        attr.setBaseValue(newBase);
+                        LOGGER.info("[SupplyMod] {} stracil {} serca po smierci (nowe maksimum: {}/20)",
+                                player.getName().getString(), HEARTS_LOST_ON_DEATH, (int) (newBase / 2));
+                    }
+                }
             }
-            return true; // never cancel death itself, only rescue items
+            return true; // never cancel death itself, only rescue items / adjust health
         });
 
         // Restore items protected by Ksiega Ulaskawienia after respawn.
