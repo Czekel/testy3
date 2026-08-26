@@ -106,8 +106,6 @@ public class CraftAltarManager {
 
         InteractionEntity hitbox = new InteractionEntity(EntityType.INTERACTION, world);
         hitbox.updatePosition(position.x, baseY + 1.0, position.z);
-        hitbox.setWidth(1.0f);
-        hitbox.setHeight(1.0f);
         world.spawnEntity(hitbox);
 
         DisplayEntity.TextDisplayEntity nameDisplay =
@@ -226,4 +224,4 @@ public class CraftAltarManager {
             this.center = center;
         }
     }
-                }
+                                           }
