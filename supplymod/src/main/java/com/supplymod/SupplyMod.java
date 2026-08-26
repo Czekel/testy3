@@ -20,6 +20,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.text.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -139,7 +140,7 @@ public class SupplyMod implements ModInitializer {
                                                         CraftAltarManager.spawnAltar(
                                                                 (ServerWorld) player.getEntityWorld(),
                                                                 recipe,
-                                                                player.getPos());
+                                                                new Vec3d(player.getX(), player.getY(), player.getZ()));
 
                                                         ctx.getSource().sendFeedback(() -> Text.literal("Utworzono oltarz craftingowy: " + name), false);
                                                         return 1;
