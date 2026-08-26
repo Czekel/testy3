@@ -102,14 +102,16 @@ public class CraftAltarManager {
         double baseY = position.y;
 
         DisplayEntity.ItemDisplayEntity itemDisplay =
-                new DisplayEntity.ItemDisplayEntity(EntityType.ITEM_DISPLAY, world);
-        itemDisplay.updatePosition(position.x, baseY + 1.0, position.z);
-        itemDisplay.setItemStack(new ItemStack(recipe.resultItem, 1));
-        world.spawnEntity(itemDisplay);
+        new DisplayEntity.ItemDisplayEntity(EntityType.ITEM_DISPLAY, world);
+itemDisplay.updatePosition(position.x, baseY + 1.0, position.z);
+itemDisplay.setItemStack(new ItemStack(recipe.resultItem, 1));
+itemDisplay.setInvulnerable(true);
+world.spawnEntity(itemDisplay);
 
-        InteractionEntity hitbox = new InteractionEntity(EntityType.INTERACTION, world);
-        hitbox.updatePosition(position.x, baseY + 1.0, position.z);
-        world.spawnEntity(hitbox);
+InteractionEntity hitbox = new InteractionEntity(EntityType.INTERACTION, world);
+hitbox.updatePosition(position.x, baseY + 1.0, position.z);
+hitbox.setInvulnerable(true);
+world.spawnEntity(hitbox);
 
         DisplayEntity.TextDisplayEntity nameDisplay =
                 new DisplayEntity.TextDisplayEntity(EntityType.TEXT_DISPLAY, world);
