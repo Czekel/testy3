@@ -19,6 +19,7 @@ import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.ActionResult;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.text.Text;
@@ -112,8 +113,20 @@ public class SupplyMod implements ModInitializer {
                                                             return 0;
                                                         }
 
+                                                        Formatting nameColor = Formatting.GOLD;
                                                         List<CraftRecipe.Ingredient> ingredients = new ArrayList<>();
                                                         for (String token : ingredientsRaw.trim().split("\\s+")) {
+                                                            if (token.toLowerCase().startsWith("color:")) {
+                                                                String colorName = token.substring("color:".length());
+                                                                Formatting parsed = Formatting.byName(colorName);
+                                                                if (parsed == null) {
+                                                                    ctx.getSource().sendError(Text.literal("Nieznany kolor: " + colorName));
+                                                                    return 0;
+                                                                }
+                                                                nameColor = parsed;
+                                                                continue;
+                                                            }
+
                                                             String[] parts = token.split(":");
                                                             if (parts.length != 3) {
                                                                 ctx.getSource().sendError(Text.literal("Zly format skladnika: " + token
@@ -136,7 +149,7 @@ public class SupplyMod implements ModInitializer {
                                                             ingredients.add(new CraftRecipe.Ingredient(ingredientItem, count));
                                                         }
 
-                                                        CraftRecipe recipe = new CraftRecipe(resultItem, name, ingredients);
+                                                        CraftRecipe recipe = new CraftRecipe(resultItem, name, nameColor, ingredients);
                                                         CraftAltarManager.spawnAltar(
                                                                 (ServerWorld) player.getEntityWorld(),
                                                                 recipe,
@@ -163,4 +176,4 @@ public class SupplyMod implements ModInitializer {
     public static List<ItemStack> stashFor(UUID playerId) {
         return PARDONED_ITEMS.computeIfAbsent(playerId, k -> new ArrayList<>());
     }
-                                                            }
+                                              }
