@@ -34,11 +34,8 @@ public class SupplyMod implements ModInitializer {
     public static final String MOD_ID = "supplymod";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    // Items saved here after death (Ksiega Ulaskawienia effect) waiting to be
-    // returned to the player on respawn. Keyed by player UUID.
     public static final Map<UUID, List<ItemStack>> PARDONED_ITEMS = new ConcurrentHashMap<>();
 
-    // How many hearts (max health) a player loses on death.
     private static final double HEARTS_LOST_ON_DEATH = ModItems.HEALTH_PER_HEART_ITEM;
 
     @Override
@@ -95,57 +92,62 @@ public class SupplyMod implements ModInitializer {
         });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("crafting")
-                    .then(CommandManager.argument("name", StringArgumentType.string())
-                            .then(CommandManager.argument("result", StringArgumentType.string())
-                                    .then(CommandManager.argument("ingredients", StringArgumentType.greedyString())
-                                            .executes(ctx -> {
-                                                ServerPlayerEntity player = ctx.getSource().getPlayer();
-                                                if (player == null) return 0;
+            dispatcher.register(
+                    CommandManager.literal("crafting")
+                            .then(CommandManager.argument("name", StringArgumentType.string())
+                                    .then(CommandManager.argument("result", StringArgumentType.string())
+                                            .then(CommandManager.argument("ingredients", StringArgumentType.greedyString())
+                                                    .executes(ctx -> {
+                                                        ServerPlayerEntity player = ctx.getSource().getPlayer();
+                                                        if (player == null) return 0;
 
-                                                String name = StringArgumentType.getString(ctx, "name");
-                                                String resultId = StringArgumentType.getString(ctx, "result");
-                                                String ingredientsRaw = StringArgumentType.getString(ctx, "ingredients");
+                                                        String name = StringArgumentType.getString(ctx, "name");
+                                                        String resultId = StringArgumentType.getString(ctx, "result");
+                                                        String ingredientsRaw = StringArgumentType.getString(ctx, "ingredients");
 
-                                                Item resultItem = Registries.ITEM.get(Identifier.of(resultId));
-                                                if (resultItem == net.minecraft.item.Items.AIR) {
-                                                    ctx.getSource().sendError(Text.literal("Nieznany przedmiot: " + resultId));
-                                                    return 0;
-                                                }
+                                                        Item resultItem = Registries.ITEM.get(Identifier.of(resultId));
+                                                        if (resultItem == net.minecraft.item.Items.AIR) {
+                                                            ctx.getSource().sendError(Text.literal("Nieznany przedmiot: " + resultId));
+                                                            return 0;
+                                                        }
 
-                                                List<CraftRecipe.Ingredient> ingredients = new ArrayList<>();
-                                                for (String token : ingredientsRaw.trim().split("\\s+")) {
-                                                    String[] parts = token.split(":");
-                                                    if (parts.length != 3) {
-                                                        ctx.getSource().sendError(Text.literal("Zly format skladnika: " + token
-                                                                + " (oczekiwano namespace:item:ilosc)"));
-                                                        return 0;
-                                                    }
-                                                    Identifier itemId = Identifier.of(parts[0], parts[1]);
-                                                    Item ingredientItem = Registries.ITEM.get(itemId);
-                                                    if (ingredientItem == net.minecraft.item.Items.AIR) {
-                                                        ctx.getSource().sendError(Text.literal("Nieznany skladnik: " + parts[0] + ":" + parts[1]));
-                                                        return 0;
-                                                    }
-                                                    int count;
-                                                    try {
-                                                        count = Integer.parseInt(parts[2]);
-                                                    } catch (NumberFormatException e) {
-                                                        ctx.getSource().sendError(Text.literal("Zla ilosc dla: " + token));
-                                                        return 0;
-                                                    }
-                                                    ingredients.add(new CraftRecipe.Ingredient(ingredientItem, count));
-                                                }
+                                                        List<CraftRecipe.Ingredient> ingredients = new ArrayList<>();
+                                                        for (String token : ingredientsRaw.trim().split("\\s+")) {
+                                                            String[] parts = token.split(":");
+                                                            if (parts.length != 3) {
+                                                                ctx.getSource().sendError(Text.literal("Zly format skladnika: " + token
+                                                                        + " (oczekiwano namespace:item:ilosc)"));
+                                                                return 0;
+                                                            }
+                                                            Identifier itemId = Identifier.of(parts[0], parts[1]);
+                                                            Item ingredientItem = Registries.ITEM.get(itemId);
+                                                            if (ingredientItem == net.minecraft.item.Items.AIR) {
+                                                                ctx.getSource().sendError(Text.literal("Nieznany skladnik: " + parts[0] + ":" + parts[1]));
+                                                                return 0;
+                                                            }
+                                                            int count;
+                                                            try {
+                                                                count = Integer.parseInt(parts[2]);
+                                                            } catch (NumberFormatException e) {
+                                                                ctx.getSource().sendError(Text.literal("Zla ilosc dla: " + token));
+                                                                return 0;
+                                                            }
+                                                            ingredients.add(new CraftRecipe.Ingredient(ingredientItem, count));
+                                                        }
 
-                                                CraftRecipe recipe = new CraftRecipe(resultItem, name, ingredients);
-                                                CraftAltarManager.spawnAltar(
-                                                        (ServerWorld) player.getEntityWorld(),
-                                                        recipe,
-                                                        player.getPos());
+                                                        CraftRecipe recipe = new CraftRecipe(resultItem, name, ingredients);
+                                                        CraftAltarManager.spawnAltar(
+                                                                (ServerWorld) player.getEntityWorld(),
+                                                                recipe,
+                                                                player.getPos());
 
-                                                ctx.getSource().sendFeedback(() -> Text.literal("Utworzono oltarz craftingowy: " + name), false);
-                                                return 1;
-                                            }))));
+                                                        ctx.getSource().sendFeedback(() -> Text.literal("Utworzono oltarz craftingowy: " + name), false);
+                                                        return 1;
+                                                    })
+                                            )
+                                    )
+                            )
+            );
         });
 
         UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
@@ -160,4 +162,4 @@ public class SupplyMod implements ModInitializer {
     public static List<ItemStack> stashFor(UUID playerId) {
         return PARDONED_ITEMS.computeIfAbsent(playerId, k -> new ArrayList<>());
     }
-}
+                                                            }
