@@ -20,17 +20,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Manages "crafting altars" created via the /crafting command: a spinning
- * hologram of the reward item, with a floating list of required ingredients
- * above it (red = missing, green = have enough). Since Display entities have
- * no hitbox and can't be clicked directly, an invisible InteractionEntity is
- * layered on top of the item display to actually catch the click.
- * Right-clicking it when all ingredients are satisfied consumes them from
- * the player's inventory and gives the reward.
+ * Manages "crafting altars" created via the /crafting command: a small,
+ * slightly tilted, spinning hologram of the reward item, with a floating
+ * list of required ingredients above it (red = missing, green = have
+ * enough). Since Display entities have no hitbox and can't be clicked
+ * directly, an invisible InteractionEntity is layered on top of the item
+ * display to actually catch the click. Right-clicking it when all
+ * ingredients are satisfied consumes them from the player's inventory,
+ * gives the reward, plays the Wither spawn sound, and announces the craft
+ * in chat with the player's name.
  */
 public class CraftAltarManager {
 
     private static final List<Altar> activeAltars = new ArrayList<>();
+    private static final float ITEM_SCALE = 0.5f;
+    private static final float TILT_RADIANS = 0.3f; // ~17 degrees
 
     public static void onWorldTick(ServerWorld world) {
         List<Altar> toRemove = new ArrayList<>();
@@ -54,8 +58,8 @@ public class CraftAltarManager {
         altar.spinAngle += 0.05f;
         AffineTransformation transform = new AffineTransformation(
                 new Vector3f(0, 0, 0),
-                new Quaternionf().rotateY(altar.spinAngle),
-                new Vector3f(1, 1, 1),
+                new Quaternionf().rotateX(TILT_RADIANS).rotateY(altar.spinAngle),
+                new Vector3f(ITEM_SCALE, ITEM_SCALE, ITEM_SCALE),
                 new Quaternionf()
         );
         altar.itemDisplay.setTransformation(transform);
@@ -79,7 +83,6 @@ public class CraftAltarManager {
             Formatting color = satisfied ? Formatting.GREEN : Formatting.RED;
             line.textDisplay.setText(Text.literal(
                     "x" + line.ingredient.count + " " + line.ingredient.item.getName().getString()
-                            + " (" + have + "/" + line.ingredient.count + ")"
             ).formatted(color));
         }
     }
@@ -111,7 +114,7 @@ public class CraftAltarManager {
         DisplayEntity.TextDisplayEntity nameDisplay =
                 new DisplayEntity.TextDisplayEntity(EntityType.TEXT_DISPLAY, world);
         nameDisplay.updatePosition(position.x, baseY + 1.6, position.z);
-        nameDisplay.setText(Text.literal(recipe.displayName).formatted(Formatting.GOLD, Formatting.BOLD));
+        nameDisplay.setText(Text.literal(recipe.displayName).formatted(recipe.nameColor, Formatting.BOLD));
         nameDisplay.setBillboardMode(DisplayEntity.BillboardMode.CENTER);
         world.spawnEntity(nameDisplay);
 
@@ -124,7 +127,7 @@ public class CraftAltarManager {
                     new DisplayEntity.TextDisplayEntity(EntityType.TEXT_DISPLAY, world);
             ingredientDisplay.updatePosition(position.x, y, position.z);
             ingredientDisplay.setText(Text.literal(
-                    "x" + ingredient.count + " " + ingredient.item.getName().getString() + " (0/" + ingredient.count + ")"
+                    "x" + ingredient.count + " " + ingredient.item.getName().getString()
             ).formatted(Formatting.RED));
             ingredientDisplay.setBillboardMode(DisplayEntity.BillboardMode.CENTER);
             world.spawnEntity(ingredientDisplay);
@@ -136,7 +139,7 @@ public class CraftAltarManager {
         DisplayEntity.TextDisplayEntity headerDisplay =
                 new DisplayEntity.TextDisplayEntity(EntityType.TEXT_DISPLAY, world);
         headerDisplay.updatePosition(position.x, y + 0.1, position.z);
-        headerDisplay.setText(Text.literal("Wymagane przedmioty:").formatted(Formatting.GRAY, Formatting.BOLD));
+        headerDisplay.setText(Text.literal("Wymagane przedmioty:").formatted(Formatting.GOLD, Formatting.BOLD));
         headerDisplay.setBillboardMode(DisplayEntity.BillboardMode.CENTER);
         world.spawnEntity(headerDisplay);
 
@@ -174,8 +177,8 @@ public class CraftAltarManager {
                     SoundCategory.HOSTILE, 1.0f, 1.0f);
 
             for (ServerPlayerEntity p : world.getPlayers()) {
-                p.sendMessage(Text.literal("Legendarna Bron (" + altar.recipe.displayName + ") zostala stworzona!")
-                        .formatted(Formatting.LIGHT_PURPLE, Formatting.BOLD), false);
+                p.sendMessage(Text.literal(player.getName().getString() + " stworzyl legendarna bron "
+                        + altar.recipe.displayName).formatted(Formatting.GOLD), false);
             }
 
             altar.itemDisplay.discard();
@@ -224,4 +227,4 @@ public class CraftAltarManager {
             this.center = center;
         }
     }
-                                           }
+        }
