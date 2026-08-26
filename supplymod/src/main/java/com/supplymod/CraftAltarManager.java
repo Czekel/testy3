@@ -2,6 +2,7 @@ package com.supplymod;
 
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.decoration.DisplayEntity;
+import net.minecraft.entity.decoration.Interaction;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -21,9 +22,11 @@ import java.util.List;
 /**
  * Manages "crafting altars" created via the /crafting command: a spinning
  * hologram of the reward item, with a floating list of required ingredients
- * above it (red = missing, green = have enough). Right-clicking the item
- * when all ingredients are satisfied consumes them from the player's
- * inventory and gives the reward.
+ * above it (red = missing, green = have enough). Since Display entities have
+ * no hitbox and can't be clicked directly, an invisible Interaction entity
+ * is layered on top of the item display to actually catch the click.
+ * Right-clicking it when all ingredients are satisfied consumes them from
+ * the player's inventory and gives the reward.
  */
 public class CraftAltarManager {
 
@@ -101,6 +104,14 @@ public class CraftAltarManager {
         itemDisplay.setItemStack(new ItemStack(recipe.resultItem, 1));
         world.spawnEntity(itemDisplay);
 
+        // Display entities have no hitbox at all - an invisible Interaction
+        // entity sits in the same spot so right-clicks are actually caught.
+        Interaction hitbox = new Interaction(EntityType.INTERACTION, world);
+        hitbox.updatePosition(position.x, baseY + 1.0, position.z);
+        hitbox.setWidth(1.0f);
+        hitbox.setHeight(1.0f);
+        world.spawnEntity(hitbox);
+
         DisplayEntity.TextDisplayEntity nameDisplay =
                 new DisplayEntity.TextDisplayEntity(EntityType.TEXT_DISPLAY, world);
         nameDisplay.updatePosition(position.x, baseY + 1.6, position.z);
@@ -133,17 +144,17 @@ public class CraftAltarManager {
         headerDisplay.setBillboardMode(DisplayEntity.BillboardMode.CENTER);
         world.spawnEntity(headerDisplay);
 
-        Altar altar = new Altar(recipe, itemDisplay, nameDisplay, headerDisplay, lines, position);
+        Altar altar = new Altar(recipe, itemDisplay, hitbox, nameDisplay, headerDisplay, lines, position);
         activeAltars.add(altar);
     }
 
-    public static boolean tryCraft(ServerPlayerEntity player, DisplayEntity.ItemDisplayEntity clicked) {
+    public static boolean tryCraft(ServerPlayerEntity player, Interaction clickedHitbox) {
         for (Altar altar : activeAltars) {
-            if (altar.itemDisplay != clicked) continue;
+            if (altar.hitbox != clickedHitbox) continue;
 
             for (CraftRecipe.Ingredient ingredient : altar.recipe.ingredients) {
                 if (countItem(player, ingredient.item) < ingredient.count) {
-                    player.sendMessage(Text.literal("Brakuje wymaganych przedmiotow!").formatted(Formatting.RED), true);
+                    player.sendMessage(Text.literal("Nie masz wystarczajacej ilosci przedmiotow!").formatted(Formatting.RED), false);
                     return false;
                 }
             }
@@ -172,6 +183,7 @@ public class CraftAltarManager {
             }
 
             altar.itemDisplay.discard();
+            altar.hitbox.discard();
             altar.nameDisplay.discard();
             altar.headerDisplay.discard();
             for (IngredientLine line : altar.ingredientLines) {
@@ -197,20 +209,23 @@ public class CraftAltarManager {
     private static class Altar {
         final CraftRecipe recipe;
         final DisplayEntity.ItemDisplayEntity itemDisplay;
+        final Interaction hitbox;
         final DisplayEntity.TextDisplayEntity nameDisplay;
         final DisplayEntity.TextDisplayEntity headerDisplay;
         final List<IngredientLine> ingredientLines;
         final Vec3d center;
         float spinAngle = 0f;
 
-        Altar(CraftRecipe recipe, DisplayEntity.ItemDisplayEntity itemDisplay, DisplayEntity.TextDisplayEntity nameDisplay,
-              DisplayEntity.TextDisplayEntity headerDisplay, List<IngredientLine> ingredientLines, Vec3d center) {
+        Altar(CraftRecipe recipe, DisplayEntity.ItemDisplayEntity itemDisplay, Interaction hitbox,
+              DisplayEntity.TextDisplayEntity nameDisplay, DisplayEntity.TextDisplayEntity headerDisplay,
+              List<IngredientLine> ingredientLines, Vec3d center) {
             this.recipe = recipe;
             this.itemDisplay = itemDisplay;
+            this.hitbox = hitbox;
             this.nameDisplay = nameDisplay;
             this.headerDisplay = headerDisplay;
             this.ingredientLines = ingredientLines;
             this.center = center;
         }
     }
-    }
+                              }
