@@ -10,7 +10,7 @@ import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.decoration.Interaction;
+import net.minecraft.entity.decoration.InteractionEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -152,7 +152,7 @@ public class SupplyMod implements ModInitializer {
         });
 
         UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if (entity instanceof Interaction interaction && player instanceof ServerPlayerEntity serverPlayer) {
+            if (entity instanceof InteractionEntity interaction && player instanceof ServerPlayerEntity serverPlayer) {
                 boolean crafted = CraftAltarManager.tryCraft(serverPlayer, interaction);
                 return crafted ? ActionResult.SUCCESS : ActionResult.PASS;
             }
@@ -163,4 +163,4 @@ public class SupplyMod implements ModInitializer {
     public static List<ItemStack> stashFor(UUID playerId) {
         return PARDONED_ITEMS.computeIfAbsent(playerId, k -> new ArrayList<>());
     }
-                                                            }
+                }
