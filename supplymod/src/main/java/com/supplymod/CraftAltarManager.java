@@ -62,7 +62,8 @@ public class CraftAltarManager {
         ServerPlayerEntity nearest = null;
         double bestDist = Double.MAX_VALUE;
         for (ServerPlayerEntity player : world.getPlayers()) {
-            double dist = player.getPos().distanceTo(altar.center);
+            Vec3d playerPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+            double dist = playerPos.distanceTo(altar.center);
             if (dist < bestDist) {
                 bestDist = dist;
                 nearest = player;
@@ -97,7 +98,7 @@ public class CraftAltarManager {
         DisplayEntity.ItemDisplayEntity itemDisplay =
                 new DisplayEntity.ItemDisplayEntity(EntityType.ITEM_DISPLAY, world);
         itemDisplay.updatePosition(position.x, baseY + 1.0, position.z);
-        itemDisplay.setStack(new ItemStack(recipe.resultItem, 1));
+        itemDisplay.setItemStack(new ItemStack(recipe.resultItem, 1));
         world.spawnEntity(itemDisplay);
 
         DisplayEntity.TextDisplayEntity nameDisplay =
@@ -109,8 +110,6 @@ public class CraftAltarManager {
 
         List<IngredientLine> lines = new ArrayList<>();
         double y = baseY + 2.0;
-        // Build bottom-to-top so the list reads top-to-bottom as: header,
-        // then each ingredient, then name, then the spinning item below.
         List<CraftRecipe.Ingredient> reversed = new ArrayList<>(recipe.ingredients);
         java.util.Collections.reverse(reversed);
         for (CraftRecipe.Ingredient ingredient : reversed) {
@@ -214,4 +213,4 @@ public class CraftAltarManager {
             this.center = center;
         }
     }
-                                      }
+    }
