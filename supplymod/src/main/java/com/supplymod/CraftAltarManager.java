@@ -2,7 +2,7 @@ package com.supplymod;
 
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.decoration.DisplayEntity;
-import net.minecraft.entity.decoration.Interaction;
+import net.minecraft.entity.decoration.InteractionEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -23,8 +23,8 @@ import java.util.List;
  * Manages "crafting altars" created via the /crafting command: a spinning
  * hologram of the reward item, with a floating list of required ingredients
  * above it (red = missing, green = have enough). Since Display entities have
- * no hitbox and can't be clicked directly, an invisible Interaction entity
- * is layered on top of the item display to actually catch the click.
+ * no hitbox and can't be clicked directly, an invisible InteractionEntity is
+ * layered on top of the item display to actually catch the click.
  * Right-clicking it when all ingredients are satisfied consumes them from
  * the player's inventory and gives the reward.
  */
@@ -104,9 +104,7 @@ public class CraftAltarManager {
         itemDisplay.setItemStack(new ItemStack(recipe.resultItem, 1));
         world.spawnEntity(itemDisplay);
 
-        // Display entities have no hitbox at all - an invisible Interaction
-        // entity sits in the same spot so right-clicks are actually caught.
-        Interaction hitbox = new Interaction(EntityType.INTERACTION, world);
+        InteractionEntity hitbox = new InteractionEntity(EntityType.INTERACTION, world);
         hitbox.updatePosition(position.x, baseY + 1.0, position.z);
         hitbox.setWidth(1.0f);
         hitbox.setHeight(1.0f);
@@ -148,7 +146,7 @@ public class CraftAltarManager {
         activeAltars.add(altar);
     }
 
-    public static boolean tryCraft(ServerPlayerEntity player, Interaction clickedHitbox) {
+    public static boolean tryCraft(ServerPlayerEntity player, InteractionEntity clickedHitbox) {
         for (Altar altar : activeAltars) {
             if (altar.hitbox != clickedHitbox) continue;
 
@@ -209,14 +207,14 @@ public class CraftAltarManager {
     private static class Altar {
         final CraftRecipe recipe;
         final DisplayEntity.ItemDisplayEntity itemDisplay;
-        final Interaction hitbox;
+        final InteractionEntity hitbox;
         final DisplayEntity.TextDisplayEntity nameDisplay;
         final DisplayEntity.TextDisplayEntity headerDisplay;
         final List<IngredientLine> ingredientLines;
         final Vec3d center;
         float spinAngle = 0f;
 
-        Altar(CraftRecipe recipe, DisplayEntity.ItemDisplayEntity itemDisplay, Interaction hitbox,
+        Altar(CraftRecipe recipe, DisplayEntity.ItemDisplayEntity itemDisplay, InteractionEntity hitbox,
               DisplayEntity.TextDisplayEntity nameDisplay, DisplayEntity.TextDisplayEntity headerDisplay,
               List<IngredientLine> ingredientLines, Vec3d center) {
             this.recipe = recipe;
@@ -228,4 +226,4 @@ public class CraftAltarManager {
             this.center = center;
         }
     }
-                              }
+                }
