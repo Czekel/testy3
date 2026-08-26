@@ -1,134 +1,165 @@
 package com.supplymod;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.decoration.DisplayEntity;
+import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
 import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.text.Text;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
-import net.minecraft.world.World;
+import net.minecraft.text.Text;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public class ModItems {
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
-    public static final double MAX_HEALTH_CAP = 40.0;
-    public static final double HEALTH_PER_HEART_ITEM = 2.0;
+public class SupplyMod implements ModInitializer {
+    public static final String MOD_ID = "supplymod";
+    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    public static final String PARDON_KEY = "supplymod_pardoned";
+    public static final Map<UUID, List<ItemStack>> PARDONED_ITEMS = new ConcurrentHashMap<>();
 
-    public static Item BOOK_OF_PARDON;
-    public static Item HEART_ITEM;
+    private static final double HEARTS_LOST_ON_DEATH = ModItems.HEALTH_PER_HEART_ITEM;
 
-    public static void register() {
-        RegistryKey<Item> bookKey = RegistryKey.of(RegistryKeys.ITEM,
-                Identifier.of(SupplyMod.MOD_ID, "book_of_pardon"));
-        BOOK_OF_PARDON = Registry.register(
-                Registries.ITEM,
-                bookKey,
-                new PardonBookItem(new Item.Settings().maxCount(16).registryKey(bookKey)));
+    @Override
+    public void onInitialize() {
+        LOGGER.info("[SupplyMod] Startuje...");
 
-        RegistryKey<Item> heartKey = RegistryKey.of(RegistryKeys.ITEM,
-                Identifier.of(SupplyMod.MOD_ID, "heart"));
-        HEART_ITEM = Registry.register(
-                Registries.ITEM,
-                heartKey,
-                new HeartItem(new Item.Settings().maxCount(16).registryKey(heartKey)));
-    }
+        ModItems.register();
+        SupplyDropManager.init();
 
-    public static boolean isPardoned(ItemStack stack) {
-        if (stack.isEmpty()) {
-            return false;
-        }
-        NbtComponent data = stack.get(DataComponentTypes.CUSTOM_DATA);
-        return data != null && data.copyNbt().getBoolean(PARDON_KEY, false);
-    }
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            server.getWorlds().forEach(SupplyDropManager::onWorldTick);
+            server.getWorlds().forEach(CraftAltarManager::onWorldTick);
+        });
 
-    public static class PardonBookItem extends Item {
-        public PardonBookItem(Settings settings) {
-            super(settings);
-        }
+        ServerLivingEntityEvents.ALLOW_DEATH.register((entity, damageSource, damageAmount) -> {
+            if (entity instanceof ServerPlayerEntity player) {
+                PlayerInventory inv = player.getInventory();
+                for (int i = 0; i < inv.size(); i++) {
+                    ItemStack stack = inv.getStack(i);
+                    if (ModItems.isPardoned(stack)) {
+                        ItemStack saved = stack.copy();
+                        saved.remove(DataComponentTypes.CUSTOM_DATA);
+                        stashFor(player.getUuid()).add(saved);
+                        inv.setStack(i, ItemStack.EMPTY);
+                    }
+                }
 
-        @Override
-        public boolean hasGlint(ItemStack stack) {
+                EntityAttributeInstance attr = player.getAttributeInstance(EntityAttributes.MAX_HEALTH);
+                if (attr != null) {
+                    double currentBase = attr.getBaseValue();
+                    double newBase = Math.max(20.0, currentBase - HEARTS_LOST_ON_DEATH);
+                    if (newBase < currentBase) {
+                        attr.setBaseValue(newBase);
+                        LOGGER.info("[SupplyMod] {} stracil serce po smierci (nowe maksimum: {}/20)",
+                                player.getName().getString(), (int) (newBase / 2));
+                    }
+                }
+            }
             return true;
-        }
+        });
 
-        @Override
-        public ActionResult use(World world, PlayerEntity player, Hand hand) {
-            ItemStack book = player.getStackInHand(hand);
-
-            if (world.isClient()) {
-                return ActionResult.SUCCESS;
+        ServerPlayerEvents.COPY_FROM.register((oldPlayer, newPlayer, alive) -> {
+            UUID id = oldPlayer.getUuid();
+            List<ItemStack> saved = PARDONED_ITEMS.remove(id);
+            if (saved != null) {
+                for (ItemStack stack : saved) {
+                    if (!newPlayer.getInventory().insertStack(stack)) {
+                        newPlayer.dropItem(stack, false);
+                    }
+                }
+                LOGGER.info("[SupplyMod] Zwrocono {} przedmiot(y) chronione Ksiega Ulaskawienia dla {}",
+                        saved.size(), newPlayer.getName().getString());
             }
+        });
 
-            Hand otherHand = (hand == Hand.MAIN_HAND) ? Hand.OFF_HAND : Hand.MAIN_HAND;
-            ItemStack target = player.getStackInHand(otherHand);
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            dispatcher.register(
+                    CommandManager.literal("crafting")
+                            .then(CommandManager.argument("name", StringArgumentType.string())
+                                    .then(CommandManager.argument("result", StringArgumentType.string())
+                                            .then(CommandManager.argument("ingredients", StringArgumentType.greedyString())
+                                                    .executes(ctx -> {
+                                                        ServerPlayerEntity player = ctx.getSource().getPlayer();
+                                                        if (player == null) return 0;
 
-            if (target.isEmpty()) {
-                player.sendMessage(Text.literal("Trzymaj w drugiej rece przedmiot, ktory chcesz chronic."), true);
-                return ActionResult.FAIL;
+                                                        String name = StringArgumentType.getString(ctx, "name");
+                                                        String resultId = StringArgumentType.getString(ctx, "result");
+                                                        String ingredientsRaw = StringArgumentType.getString(ctx, "ingredients");
+
+                                                        Item resultItem = Registries.ITEM.get(Identifier.of(resultId));
+                                                        if (resultItem == net.minecraft.item.Items.AIR) {
+                                                            ctx.getSource().sendError(Text.literal("Nieznany przedmiot: " + resultId));
+                                                            return 0;
+                                                        }
+
+                                                        List<CraftRecipe.Ingredient> ingredients = new ArrayList<>();
+                                                        for (String token : ingredientsRaw.trim().split("\\s+")) {
+                                                            String[] parts = token.split(":");
+                                                            if (parts.length != 3) {
+                                                                ctx.getSource().sendError(Text.literal("Zly format skladnika: " + token
+                                                                        + " (oczekiwano namespace:item:ilosc)"));
+                                                                return 0;
+                                                            }
+                                                            Identifier itemId = Identifier.of(parts[0], parts[1]);
+                                                            Item ingredientItem = Registries.ITEM.get(itemId);
+                                                            if (ingredientItem == net.minecraft.item.Items.AIR) {
+                                                                ctx.getSource().sendError(Text.literal("Nieznany skladnik: " + parts[0] + ":" + parts[1]));
+                                                                return 0;
+                                                            }
+                                                            int count;
+                                                            try {
+                                                                count = Integer.parseInt(parts[2]);
+                                                            } catch (NumberFormatException e) {
+                                                                ctx.getSource().sendError(Text.literal("Zla ilosc dla: " + token));
+                                                                return 0;
+                                                            }
+                                                            ingredients.add(new CraftRecipe.Ingredient(ingredientItem, count));
+                                                        }
+
+                                                        CraftRecipe recipe = new CraftRecipe(resultItem, name, ingredients);
+                                                        CraftAltarManager.spawnAltar(
+                                                                (ServerWorld) player.getEntityWorld(),
+                                                                recipe,
+                                                                player.getPos());
+
+                                                        ctx.getSource().sendFeedback(() -> Text.literal("Utworzono oltarz craftingowy: " + name), false);
+                                                        return 1;
+                                                    })
+                                            )
+                                    )
+                            )
+            );
+        });
+
+        UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
+            if (entity instanceof DisplayEntity.ItemDisplayEntity itemDisplay && player instanceof ServerPlayerEntity serverPlayer) {
+                boolean crafted = CraftAltarManager.tryCraft(serverPlayer, itemDisplay);
+                return crafted ? ActionResult.SUCCESS : ActionResult.PASS;
             }
-            if (target.isOf(BOOK_OF_PARDON)) {
-                player.sendMessage(Text.literal("Nie mozesz oznaczyc drugiej Ksiegi Ulaskawienia."), true);
-                return ActionResult.FAIL;
-            }
-
-            NbtCompound nbt = new NbtCompound();
-            nbt.putBoolean(PARDON_KEY, true);
-            target.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
-
-            player.sendMessage(Text.literal("Przedmiot zostal oznaczony Ksiega Ulaskawienia - nie wypadnie po smierci!"), true);
-
-            if (!player.getAbilities().creativeMode) {
-                book.decrement(1);
-            }
-            return ActionResult.SUCCESS;
-        }
+            return ActionResult.PASS;
+        });
     }
 
-    public static class HeartItem extends Item {
-        public HeartItem(Settings settings) {
-            super(settings);
-        }
-
-        @Override
-        public ActionResult use(World world, PlayerEntity player, Hand hand) {
-            ItemStack stack = player.getStackInHand(hand);
-            if (world.isClient()) {
-                return ActionResult.SUCCESS;
-            }
-
-            EntityAttributeInstance attr = player.getAttributeInstance(EntityAttributes.MAX_HEALTH);
-            if (attr == null) {
-                return ActionResult.PASS;
-            }
-
-            double currentBase = attr.getBaseValue();
-            if (currentBase >= MAX_HEALTH_CAP) {
-                player.sendMessage(Text.literal("Masz juz maksymalna liczbe serc (20)."), true);
-                return ActionResult.FAIL;
-            }
-
-            double newBase = Math.min(MAX_HEALTH_CAP, currentBase + HEALTH_PER_HEART_ITEM);
-            attr.setBaseValue(newBase);
-            player.setHealth((float) Math.min(player.getHealth() + HEALTH_PER_HEART_ITEM, (float) newBase));
-            player.sendMessage(Text.literal("Zdobywasz dodatkowe serce! (" + (int) (newBase / 2) + "/20)"), true);
-
-            world.sendEntityStatus(player, (byte) 35);
-
-            if (!player.getAbilities().creativeMode) {
-                stack.decrement(1);
-            }
-            return ActionResult.SUCCESS;
-        }
+    public static List<ItemStack> stashFor(UUID playerId) {
+        return PARDONED_ITEMS.computeIfAbsent(playerId, k -> new ArrayList<>());
     }
-}
+                                                                }
