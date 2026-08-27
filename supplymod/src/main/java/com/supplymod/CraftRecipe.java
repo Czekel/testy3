@@ -1,6 +1,8 @@
 package com.supplymod;
 
+import net.minecraft.enchantment.Enchantment;
 import net.minecraft.item.Item;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.util.Formatting;
 
 import java.util.List;
@@ -10,12 +12,15 @@ public class CraftRecipe {
     public final String displayName;
     public final Formatting nameColor;
     public final List<Ingredient> ingredients;
+    public final List<EnchantEntry> enchantments;
 
-    public CraftRecipe(Item resultItem, String displayName, Formatting nameColor, List<Ingredient> ingredients) {
+    public CraftRecipe(Item resultItem, String displayName, Formatting nameColor,
+                        List<Ingredient> ingredients, List<EnchantEntry> enchantments) {
         this.resultItem = resultItem;
         this.displayName = displayName;
         this.nameColor = nameColor;
         this.ingredients = ingredients;
+        this.enchantments = enchantments;
     }
 
     public static class Ingredient {
@@ -25,6 +30,16 @@ public class CraftRecipe {
         public Ingredient(Item item, int count) {
             this.item = item;
             this.count = count;
+        }
+    }
+
+    public static class EnchantEntry {
+        public final RegistryKey<Enchantment> enchantment;
+        public final int level;
+
+        public EnchantEntry(RegistryKey<Enchantment> enchantment, int level) {
+            this.enchantment = enchantment;
+            this.level = level;
         }
     }
 }
