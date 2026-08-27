@@ -266,4 +266,4 @@ public class CraftAltarManager {
             this.chunkPos = chunkPos;
         }
     }
-        }
+                }
