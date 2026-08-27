@@ -21,11 +21,13 @@ import java.util.Random;
  *  - Brodawki nether       25%
  *  - Czesc diamentowej zbroi (losowa) 40%
  *  - Zelazo + Zloto        70%
+ *  - Zaczarowana ksiazka   30% (patrz uwaga nizej)
  *  - Serce (item)          10%
  *  - Ksiega Ulaskawienia   1%
  *  - Netherite scrap       5%
  *  - Diamenty (luzem)      30% (bylo 20%, +10pp na prosbe)
  *  - Miedz                 80%
+ *  - Butelka z doswiadczeniem 70%
  *
  * Wypelniacze dodane przeze mnie, zeby zrzut nie byl pusty gdy nic
  * wiekszego nie wypadnie:
@@ -36,11 +38,11 @@ import java.util.Random;
  *  - Lapis lazuli           25%
  *  - Szmaragd               15%
  *  - Perla Endermana        15%
- *  - Siodlo                 5%
+ *  - Siodlo                 8%
  *
  * Dodatkowe przedmioty dorzucone na prosbe:
  *  - Elytra                 1%
- *  - Shulker box            5%
+ *  - Shulker box            8%
  *  - Trojzab                10%
  *  - Kusza                  20%
  *  - Luk                    35%
@@ -76,6 +78,7 @@ public class SupplyLoot {
         roll(random, 0.05, () -> new ItemStack(Items.NETHERITE_SCRAP, 1), loot);
         roll(random, 0.30, () -> new ItemStack(Items.DIAMOND, 1 + random.nextInt(3)), loot);
         roll(random, 0.80, () -> new ItemStack(Items.COPPER_INGOT, 3 + random.nextInt(6)), loot);
+        roll(random, 0.70, () -> new ItemStack(Items.EXPERIENCE_BOTTLE, 5 + random.nextInt(11)), loot);
 
         // Wypelniacze - zeby zrzut nigdy nie byl calkiem pusty.
         roll(random, 0.60, () -> new ItemStack(Items.BREAD, 2 + random.nextInt(4)), loot);
@@ -124,4 +127,4 @@ public class SupplyLoot {
         };
         return boxes[random.nextInt(boxes.length)];
     }
-}
+    }
