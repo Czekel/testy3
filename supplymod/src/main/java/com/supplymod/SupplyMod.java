@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.component.DataComponentTypes;
+import net.minecraft.enchantment.Enchantment;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.decoration.InteractionEntity;
@@ -15,6 +16,8 @@ import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -115,6 +118,8 @@ public class SupplyMod implements ModInitializer {
 
                                                         Formatting nameColor = Formatting.GOLD;
                                                         List<CraftRecipe.Ingredient> ingredients = new ArrayList<>();
+                                                        List<CraftRecipe.EnchantEntry> enchantments = new ArrayList<>();
+
                                                         for (String token : ingredientsRaw.trim().split("\\s+")) {
                                                             if (token.toLowerCase().startsWith("color:")) {
                                                                 String colorName = token.substring("color:".length());
@@ -124,6 +129,26 @@ public class SupplyMod implements ModInitializer {
                                                                     return 0;
                                                                 }
                                                                 nameColor = parsed;
+                                                                continue;
+                                                            }
+
+                                                            if (token.toLowerCase().startsWith("enchant:")) {
+                                                                String[] enchParts = token.substring("enchant:".length()).split(":");
+                                                                if (enchParts.length != 2) {
+                                                                    ctx.getSource().sendError(Text.literal("Zly format zaklecia: " + token
+                                                                            + " (oczekiwano enchant:nazwa:poziom)"));
+                                                                    return 0;
+                                                                }
+                                                                RegistryKey<Enchantment> enchantKey = RegistryKey.of(
+                                                                        RegistryKeys.ENCHANTMENT, Identifier.of("minecraft", enchParts[0]));
+                                                                int level;
+                                                                try {
+                                                                    level = Integer.parseInt(enchParts[1]);
+                                                                } catch (NumberFormatException e) {
+                                                                    ctx.getSource().sendError(Text.literal("Zly poziom zaklecia w: " + token));
+                                                                    return 0;
+                                                                }
+                                                                enchantments.add(new CraftRecipe.EnchantEntry(enchantKey, level));
                                                                 continue;
                                                             }
 
@@ -149,7 +174,7 @@ public class SupplyMod implements ModInitializer {
                                                             ingredients.add(new CraftRecipe.Ingredient(ingredientItem, count));
                                                         }
 
-                                                        CraftRecipe recipe = new CraftRecipe(resultItem, name, nameColor, ingredients);
+                                                        CraftRecipe recipe = new CraftRecipe(resultItem, name, nameColor, ingredients, enchantments);
                                                         CraftAltarManager.spawnAltar(
                                                                 (ServerWorld) player.getEntityWorld(),
                                                                 recipe,
@@ -176,4 +201,4 @@ public class SupplyMod implements ModInitializer {
     public static List<ItemStack> stashFor(UUID playerId) {
         return PARDONED_ITEMS.computeIfAbsent(playerId, k -> new ArrayList<>());
     }
-                                              }
+                                                                        }
