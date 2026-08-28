@@ -41,8 +41,11 @@ import java.util.List;
  *
  * The altar's chunk is force-loaded for as long as it's active - otherwise
  * the chunk unloads when no player is nearby, which freezes every entity
- * in it (the spin animation stops, colors stop updating, and clicks stop
- * registering, since nothing in an unloaded chunk ticks).
+ * in it. If any of an altar's entities were removed outside of this
+ * manager (e.g. a manual /kill in-game instead of /crafting remove), that
+ * altar is detected and cleaned up on the next tick instead of being
+ * touched further - operating on an already-removed entity can throw and
+ * would otherwise silently freeze every other altar's updates too.
  */
 public class CraftAltarManager {
 
@@ -51,22 +54,56 @@ public class CraftAltarManager {
     private static final float TILT_RADIANS = 0.3f; // ~17 degrees
 
     public static void onWorldTick(ServerWorld world) {
-        List<Altar> toRemove = new ArrayList<>();
-        for (Altar altar : activeAltars) {
+        Iterator<Altar> it = activeAltars.iterator();
+        while (it.hasNext()) {
+            Altar altar = it.next();
+
             if (altar.itemDisplay.getEntityWorld() != world) continue;
 
-            spinItem(altar);
-
-            if (world.getTime() % 20 == 0) {
-                updateColors(world, altar);
+            // If any part of this altar was removed outside our control
+            // (e.g. a manual /kill), tear the rest down and drop it from
+            // the list instead of risking an exception on a dead entity.
+            if (altar.itemDisplay.isRemoved() || altar.hitbox.isRemoved()
+                    || altar.nameDisplay.isRemoved() || altar.headerDisplay.isRemoved()
+                    || anyLineRemoved(altar)) {
+                cleanupAltar(world, altar);
+                it.remove();
+                continue;
             }
 
-            if (altar.itemDisplay.isRemoved()) {
-                releaseChunk(world, altar);
-                toRemove.add(altar);
+            try {
+                spinItem(altar);
+
+                if (world.getTime() % 20 == 0) {
+                    updateColors(world, altar);
+                }
+            } catch (Exception e) {
+                // Never let one broken altar freeze every other altar's
+                // updates - clean this one up and keep going.
+                SupplyMod.LOGGER.warn("[SupplyMod] Oltarz '{}' napotkal blad i zostal usuniety: {}",
+                        altar.recipe.displayName, e.getMessage());
+                cleanupAltar(world, altar);
+                it.remove();
             }
         }
-        activeAltars.removeAll(toRemove);
+    }
+
+    private static boolean anyLineRemoved(Altar altar) {
+        for (IngredientLine line : altar.ingredientLines) {
+            if (line.textDisplay.isRemoved()) return true;
+        }
+        return false;
+    }
+
+    private static void cleanupAltar(ServerWorld world, Altar altar) {
+        if (!altar.itemDisplay.isRemoved()) altar.itemDisplay.discard();
+        if (!altar.hitbox.isRemoved()) altar.hitbox.discard();
+        if (!altar.nameDisplay.isRemoved()) altar.nameDisplay.discard();
+        if (!altar.headerDisplay.isRemoved()) altar.headerDisplay.discard();
+        for (IngredientLine line : altar.ingredientLines) {
+            if (!line.textDisplay.isRemoved()) line.textDisplay.discard();
+        }
+        releaseChunk(world, altar);
     }
 
     private static void spinItem(Altar altar) {
@@ -228,15 +265,7 @@ public class CraftAltarManager {
                         + altar.recipe.displayName).formatted(Formatting.GOLD), false);
             }
 
-            altar.itemDisplay.discard();
-            altar.hitbox.discard();
-            altar.nameDisplay.discard();
-            altar.headerDisplay.discard();
-            for (IngredientLine line : altar.ingredientLines) {
-                line.textDisplay.discard();
-            }
-
-            releaseChunk(world, altar);
+            cleanupAltar(world, altar);
             activeAltars.remove(altar);
             return true;
         }
@@ -251,16 +280,7 @@ public class CraftAltarManager {
             if (!altar.recipe.displayName.equalsIgnoreCase(name)) continue;
 
             ServerWorld world = (ServerWorld) altar.itemDisplay.getEntityWorld();
-
-            altar.itemDisplay.discard();
-            altar.hitbox.discard();
-            altar.nameDisplay.discard();
-            altar.headerDisplay.discard();
-            for (IngredientLine line : altar.ingredientLines) {
-                line.textDisplay.discard();
-            }
-
-            releaseChunk(world, altar);
+            cleanupAltar(world, altar);
             it.remove();
             removedAny = true;
         }
@@ -305,4 +325,4 @@ public class CraftAltarManager {
             this.chunkPos = chunkPos;
         }
     }
-            }
+                }
