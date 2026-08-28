@@ -21,6 +21,7 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -226,6 +227,30 @@ public class CraftAltarManager {
         return false;
     }
 
+    public static boolean removeAltarByName(String name) {
+        Iterator<Altar> it = activeAltars.iterator();
+        boolean removedAny = false;
+        while (it.hasNext()) {
+            Altar altar = it.next();
+            if (!altar.recipe.displayName.equalsIgnoreCase(name)) continue;
+
+            ServerWorld world = (ServerWorld) altar.itemDisplay.getEntityWorld();
+
+            altar.itemDisplay.discard();
+            altar.hitbox.discard();
+            altar.nameDisplay.discard();
+            altar.headerDisplay.discard();
+            for (IngredientLine line : altar.ingredientLines) {
+                line.textDisplay.discard();
+            }
+
+            releaseChunk(world, altar);
+            it.remove();
+            removedAny = true;
+        }
+        return removedAny;
+    }
+
     private static void releaseChunk(ServerWorld world, Altar altar) {
         world.setChunkForced(altar.chunkPos.x, altar.chunkPos.z, false);
     }
@@ -264,4 +289,4 @@ public class CraftAltarManager {
             this.chunkPos = chunkPos;
         }
     }
-                              }
+            }
