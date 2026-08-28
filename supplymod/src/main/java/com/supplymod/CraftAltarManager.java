@@ -1,5 +1,7 @@
 package com.supplymod;
 
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.LoreComponent;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.decoration.DisplayEntity;
 import net.minecraft.entity.decoration.InteractionEntity;
@@ -32,8 +34,9 @@ import java.util.List;
  * directly, an invisible InteractionEntity is layered on top of the item
  * display to actually catch the click. Right-clicking it when all
  * ingredients are satisfied consumes them from the player's inventory,
- * applies any configured enchantments, gives the reward, plays the Wither
- * spawn sound, and announces the craft in chat with the player's name.
+ * applies any configured enchantments and lore, gives the reward, plays
+ * the Wither spawn sound, and announces the craft in chat with the
+ * player's name.
  *
  * The altar's chunk is force-loaded for as long as it's active - otherwise
  * the chunk unloads when no player is nearby, which freezes every entity
@@ -192,6 +195,7 @@ public class CraftAltarManager {
             ServerWorld world = (ServerWorld) player.getEntityWorld();
 
             ItemStack rewardStack = new ItemStack(altar.recipe.resultItem, 1);
+
             if (!altar.recipe.enchantments.isEmpty()) {
                 var enchantRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.ENCHANTMENT);
                 for (CraftRecipe.EnchantEntry entry : altar.recipe.enchantments) {
@@ -202,6 +206,15 @@ public class CraftAltarManager {
                     }
                 }
             }
+
+            if (!altar.recipe.lore.isEmpty()) {
+                List<Text> loreLines = new ArrayList<>();
+                for (String line : altar.recipe.lore) {
+                    loreLines.add(Text.literal(line).formatted(Formatting.GRAY, Formatting.ITALIC));
+                }
+                rewardStack.set(DataComponentTypes.LORE, new LoreComponent(loreLines));
+            }
+
             player.getInventory().insertStack(rewardStack);
 
             world.playSound(null, player.getBlockPos(), SoundEvents.ENTITY_WITHER_SPAWN,
