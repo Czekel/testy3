@@ -34,7 +34,8 @@ import java.util.List;
  * directly, an invisible InteractionEntity is layered on top of the item
  * display to actually catch the click. Right-clicking it when all
  * ingredients are satisfied consumes them from the player's inventory,
- * applies any configured enchantments and lore, gives the reward, plays
+ * applies any configured enchantments and lore, sets the reward item's
+ * display name to match the pedestal's color, gives the reward, plays
  * the Wither spawn sound, and announces the craft in chat with the
  * player's name.
  *
@@ -195,6 +196,8 @@ public class CraftAltarManager {
             ServerWorld world = (ServerWorld) player.getEntityWorld();
 
             ItemStack rewardStack = new ItemStack(altar.recipe.resultItem, 1);
+            rewardStack.set(DataComponentTypes.CUSTOM_NAME,
+                    Text.literal(altar.recipe.displayName).formatted(altar.recipe.nameColor, Formatting.BOLD));
 
             if (!altar.recipe.enchantments.isEmpty()) {
                 var enchantRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.ENCHANTMENT);
