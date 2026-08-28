@@ -194,8 +194,8 @@ public class CraftAltarManager {
             if (!altar.recipe.enchantments.isEmpty()) {
                 var enchantRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.ENCHANTMENT);
                 for (CraftRecipe.EnchantEntry entry : altar.recipe.enchantments) {
-                    RegistryEntry<net.minecraft.enchantment.Enchantment> enchantEntry =
-                            enchantRegistry.getOptionalEntry(entry.enchantment).orElse(null);
+            RegistryEntry<net.minecraft.enchantment.Enchantment> enchantEntry =
+        enchantRegistry.getEntry(entry.enchantment).orElse(null);
                     if (enchantEntry != null) {
                         EnchantmentHelper.apply(rewardStack, builder -> builder.add(enchantEntry, entry.level));
                     }
