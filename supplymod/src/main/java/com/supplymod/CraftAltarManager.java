@@ -194,9 +194,9 @@ public class CraftAltarManager {
             if (!altar.recipe.enchantments.isEmpty()) {
                 var enchantRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.ENCHANTMENT);
                 for (CraftRecipe.EnchantEntry entry : altar.recipe.enchantments) {
-            RegistryEntry<net.minecraft.enchantment.Enchantment> enchantEntry =
-        enchantRegistry.getEntry(entry.enchantment).orElse(null);
-                    if (enchantEntry != null) {
+                    net.minecraft.enchantment.Enchantment enchantValue = enchantRegistry.get(entry.enchantment.getValue());
+                    if (enchantValue != null) {
+                        RegistryEntry<net.minecraft.enchantment.Enchantment> enchantEntry = enchantRegistry.getEntry(enchantValue);
                         EnchantmentHelper.apply(rewardStack, builder -> builder.add(enchantEntry, entry.level));
                     }
                 }
@@ -264,4 +264,4 @@ public class CraftAltarManager {
             this.chunkPos = chunkPos;
         }
     }
-            }
+                              }
