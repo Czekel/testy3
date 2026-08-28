@@ -99,6 +99,21 @@ public class SupplyMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(
                     CommandManager.literal("crafting")
+                            .then(CommandManager.literal("remove")
+                                    .then(CommandManager.argument("name", StringArgumentType.string())
+                                            .executes(ctx -> {
+                                                String name = StringArgumentType.getString(ctx, "name");
+                                                boolean removed = CraftAltarManager.removeAltarByName(name);
+                                                if (removed) {
+                                                    ctx.getSource().sendFeedback(() -> Text.literal("Usunieto oltarz: " + name), false);
+                                                    return 1;
+                                                } else {
+                                                    ctx.getSource().sendError(Text.literal("Nie znaleziono oltarza o nazwie: " + name));
+                                                    return 0;
+                                                }
+                                            })
+                                    )
+                            )
                             .then(CommandManager.argument("name", StringArgumentType.string())
                                     .then(CommandManager.argument("result", StringArgumentType.string())
                                             .then(CommandManager.argument("ingredients", StringArgumentType.greedyString())
@@ -201,4 +216,4 @@ public class SupplyMod implements ModInitializer {
     public static List<ItemStack> stashFor(UUID playerId) {
         return PARDONED_ITEMS.computeIfAbsent(playerId, k -> new ArrayList<>());
     }
-                                                                        }
+                                                            }
