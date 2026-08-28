@@ -13,14 +13,16 @@ public class CraftRecipe {
     public final Formatting nameColor;
     public final List<Ingredient> ingredients;
     public final List<EnchantEntry> enchantments;
+    public final List<String> lore;
 
     public CraftRecipe(Item resultItem, String displayName, Formatting nameColor,
-                        List<Ingredient> ingredients, List<EnchantEntry> enchantments) {
+                        List<Ingredient> ingredients, List<EnchantEntry> enchantments, List<String> lore) {
         this.resultItem = resultItem;
         this.displayName = displayName;
         this.nameColor = nameColor;
         this.ingredients = ingredients;
         this.enchantments = enchantments;
+        this.lore = lore;
     }
 
     public static class Ingredient {
