@@ -134,6 +134,7 @@ public class SupplyMod implements ModInitializer {
                                                         Formatting nameColor = Formatting.GOLD;
                                                         List<CraftRecipe.Ingredient> ingredients = new ArrayList<>();
                                                         List<CraftRecipe.EnchantEntry> enchantments = new ArrayList<>();
+                                                        List<String> lore = new ArrayList<>();
 
                                                         for (String token : ingredientsRaw.trim().split("\\s+")) {
                                                             if (token.toLowerCase().startsWith("color:")) {
@@ -167,6 +168,12 @@ public class SupplyMod implements ModInitializer {
                                                                 continue;
                                                             }
 
+                                                            if (token.toLowerCase().startsWith("lore:")) {
+                                                                String loreText = token.substring("lore:".length()).replace('_', ' ');
+                                                                lore.add(loreText);
+                                                                continue;
+                                                            }
+
                                                             String[] parts = token.split(":");
                                                             if (parts.length != 3) {
                                                                 ctx.getSource().sendError(Text.literal("Zly format skladnika: " + token
@@ -189,7 +196,7 @@ public class SupplyMod implements ModInitializer {
                                                             ingredients.add(new CraftRecipe.Ingredient(ingredientItem, count));
                                                         }
 
-                                                        CraftRecipe recipe = new CraftRecipe(resultItem, name, nameColor, ingredients, enchantments);
+                                                        CraftRecipe recipe = new CraftRecipe(resultItem, name, nameColor, ingredients, enchantments, lore);
                                                         CraftAltarManager.spawnAltar(
                                                                 (ServerWorld) player.getEntityWorld(),
                                                                 recipe,
@@ -216,4 +223,4 @@ public class SupplyMod implements ModInitializer {
     public static List<ItemStack> stashFor(UUID playerId) {
         return PARDONED_ITEMS.computeIfAbsent(playerId, k -> new ArrayList<>());
     }
-                                                            }
+                                                    }
