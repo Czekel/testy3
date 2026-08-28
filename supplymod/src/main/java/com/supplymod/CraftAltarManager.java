@@ -111,8 +111,6 @@ public class CraftAltarManager {
     public static void spawnAltar(ServerWorld world, CraftRecipe recipe, Vec3d position) {
         double baseY = position.y;
 
-        // Force-load the chunk this altar lives in, so it keeps ticking
-        // (and the hologram + hitbox keep working) even with no player near.
         ChunkPos chunkPos = new ChunkPos((int) Math.floor(position.x) >> 4, (int) Math.floor(position.z) >> 4);
         world.setChunkForced(chunkPos.x, chunkPos.z, true);
 
@@ -197,7 +195,7 @@ public class CraftAltarManager {
                 var enchantRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.ENCHANTMENT);
                 for (CraftRecipe.EnchantEntry entry : altar.recipe.enchantments) {
                     RegistryEntry<net.minecraft.enchantment.Enchantment> enchantEntry =
-                            enchantRegistry.getEntry(entry.enchantment).orElse(null);
+                            enchantRegistry.getOptionalEntry(entry.enchantment).orElse(null);
                     if (enchantEntry != null) {
                         EnchantmentHelper.apply(rewardStack, builder -> builder.add(enchantEntry, entry.level));
                     }
@@ -266,4 +264,4 @@ public class CraftAltarManager {
             this.chunkPos = chunkPos;
         }
     }
-                }
+            }
