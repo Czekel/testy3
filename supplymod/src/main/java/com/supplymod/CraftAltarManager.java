@@ -1,239 +1,331 @@
 package com.supplymod;
 
-import com.mojang.brigadier.arguments.StringArgumentType;
-import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
-import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.event.player.UseEntityCallback;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.component.DataComponentTypes;
-import net.minecraft.enchantment.Enchantment;
-import net.minecraft.entity.attribute.EntityAttributeInstance;
-import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.component.type.LoreComponent;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.decoration.DisplayEntity;
 import net.minecraft.entity.decoration.InteractionEntity;
-import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
-import net.minecraft.server.command.CommandManager;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import net.minecraft.util.Formatting;
+import net.minecraft.util.math.AffineTransformation;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.util.math.Vec3d;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
-public class SupplyMod implements ModInitializer {
-    public static final String MOD_ID = "supplymod";
-    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+/**
+ * Manages "crafting altars" created via the /crafting command: a small,
+ * slightly tilted, spinning hologram of the reward item, with a floating
+ * list of required ingredients above it (red = missing, green = have
+ * enough). Since Display entities have no hitbox and can't be clicked
+ * directly, an invisible InteractionEntity is layered on top of the item
+ * display to actually catch the click. Right-clicking it when all
+ * ingredients are satisfied consumes them from the player's inventory,
+ * applies any configured enchantments and lore, sets the reward item's
+ * display name to match the pedestal's color, gives the reward, plays
+ * the Wither spawn sound, and announces the craft in chat with the
+ * player's name.
+ *
+ * The altar's chunk is force-loaded for as long as it's active - otherwise
+ * the chunk unloads when no player is nearby, which freezes every entity
+ * in it. If any of an altar's entities were removed outside of this
+ * manager (e.g. a manual /kill in-game instead of /crafting remove), that
+ * altar is detected and cleaned up on the next tick instead of being
+ * touched further. Player (re)joins also force a chunk refresh to make
+ * sure the client re-syncs the altar's entities after a disconnect.
+ */
+public class CraftAltarManager {
 
-    public static final Map<UUID, List<ItemStack>> PARDONED_ITEMS = new ConcurrentHashMap<>();
+    private static final List<Altar> activeAltars = new ArrayList<>();
+    private static final float ITEM_SCALE = 0.5f;
+    private static final float TILT_RADIANS = 0.3f; // ~17 degrees
 
-    private static final double HEARTS_LOST_ON_DEATH = ModItems.HEALTH_PER_HEART_ITEM;
+    public static void onWorldTick(ServerWorld world) {
+        Iterator<Altar> it = activeAltars.iterator();
+        while (it.hasNext()) {
+            Altar altar = it.next();
 
-    @Override
-    public void onInitialize() {
-        LOGGER.info("[SupplyMod] Startuje...");
+            if (altar.itemDisplay.getEntityWorld() != world) continue;
 
-        ModItems.register();
-        SupplyDropManager.init();
+            if (altar.itemDisplay.isRemoved() || altar.hitbox.isRemoved()
+                    || altar.nameDisplay.isRemoved() || altar.headerDisplay.isRemoved()
+                    || anyLineRemoved(altar)) {
+                cleanupAltar(world, altar);
+                it.remove();
+                continue;
+            }
 
-        ServerTickEvents.END_SERVER_TICK.register(server -> {
-            server.getWorlds().forEach(SupplyDropManager::onWorldTick);
-            server.getWorlds().forEach(CraftAltarManager::onWorldTick);
-        });
+            try {
+                spinItem(altar);
 
-        ServerLivingEntityEvents.ALLOW_DEATH.register((entity, damageSource, damageAmount) -> {
-            if (entity instanceof ServerPlayerEntity player) {
-                PlayerInventory inv = player.getInventory();
-                for (int i = 0; i < inv.size(); i++) {
-                    ItemStack stack = inv.getStack(i);
-                    if (ModItems.isPardoned(stack)) {
-                        ItemStack saved = stack.copy();
-                        saved.remove(DataComponentTypes.CUSTOM_DATA);
-                        stashFor(player.getUuid()).add(saved);
-                        inv.setStack(i, ItemStack.EMPTY);
-                    }
+                if (world.getTime() % 20 == 0) {
+                    updateColors(world, altar);
                 }
+            } catch (Exception e) {
+                SupplyMod.LOGGER.warn("[SupplyMod] Oltarz '{}' napotkal blad i zostal usuniety: {}",
+                        altar.recipe.displayName, e.getMessage());
+                cleanupAltar(world, altar);
+                it.remove();
+            }
+        }
+    }
 
-                EntityAttributeInstance attr = player.getAttributeInstance(EntityAttributes.MAX_HEALTH);
-                if (attr != null) {
-                    double currentBase = attr.getBaseValue();
-                    double newBase = Math.max(20.0, currentBase - HEARTS_LOST_ON_DEATH);
-                    if (newBase < currentBase) {
-                        attr.setBaseValue(newBase);
-                        LOGGER.info("[SupplyMod] {} stracil serce po smierci (nowe maksimum: {}/20)",
-                                player.getName().getString(), (int) (newBase / 2));
+    public static void refreshTrackingOnJoin(ServerWorld world) {
+        for (Altar altar : activeAltars) {
+            if (altar.itemDisplay.getEntityWorld() != world) continue;
+            world.setChunkForced(altar.chunkPos.x, altar.chunkPos.z, false);
+            world.setChunkForced(altar.chunkPos.x, altar.chunkPos.z, true);
+        }
+    }
+
+    private static boolean anyLineRemoved(Altar altar) {
+        for (IngredientLine line : altar.ingredientLines) {
+            if (line.textDisplay.isRemoved()) return true;
+        }
+        return false;
+    }
+
+    private static void cleanupAltar(ServerWorld world, Altar altar) {
+        if (!altar.itemDisplay.isRemoved()) altar.itemDisplay.discard();
+        if (!altar.hitbox.isRemoved()) altar.hitbox.discard();
+        if (!altar.nameDisplay.isRemoved()) altar.nameDisplay.discard();
+        if (!altar.headerDisplay.isRemoved()) altar.headerDisplay.discard();
+        for (IngredientLine line : altar.ingredientLines) {
+            if (!line.textDisplay.isRemoved()) line.textDisplay.discard();
+        }
+        releaseChunk(world, altar);
+    }
+
+    private static void spinItem(Altar altar) {
+        altar.spinAngle += 0.05f;
+        AffineTransformation transform = new AffineTransformation(
+                new Vector3f(0, 0, 0),
+                new Quaternionf().rotateX(TILT_RADIANS).rotateY(altar.spinAngle),
+                new Vector3f(ITEM_SCALE, ITEM_SCALE, ITEM_SCALE),
+                new Quaternionf()
+        );
+        altar.itemDisplay.setTransformation(transform);
+    }
+
+    private static void updateColors(ServerWorld world, Altar altar) {
+        ServerPlayerEntity nearest = null;
+        double bestDist = Double.MAX_VALUE;
+        for (ServerPlayerEntity player : world.getPlayers()) {
+            Vec3d playerPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+            double dist = playerPos.distanceTo(altar.center);
+            if (dist < bestDist) {
+                bestDist = dist;
+                nearest = player;
+            }
+        }
+
+        for (IngredientLine line : altar.ingredientLines) {
+            int have = nearest == null ? 0 : countItem(nearest, line.ingredient.item);
+            boolean satisfied = have >= line.ingredient.count;
+            Formatting color = satisfied ? Formatting.GREEN : Formatting.RED;
+            line.textDisplay.setText(Text.literal(
+                    "x" + line.ingredient.count + " " + line.ingredient.item.getName().getString()
+            ).formatted(color));
+        }
+    }
+
+    private static int countItem(ServerPlayerEntity player, Item item) {
+        int total = 0;
+        for (int i = 0; i < player.getInventory().size(); i++) {
+            ItemStack stack = player.getInventory().getStack(i);
+            if (stack.isOf(item)) {
+                total += stack.getCount();
+            }
+        }
+        return total;
+    }
+
+    public static void spawnAltar(ServerWorld world, CraftRecipe recipe, Vec3d position) {
+        double baseY = position.y;
+
+        ChunkPos chunkPos = new ChunkPos((int) Math.floor(position.x) >> 4, (int) Math.floor(position.z) >> 4);
+        world.setChunkForced(chunkPos.x, chunkPos.z, true);
+
+        DisplayEntity.ItemDisplayEntity itemDisplay =
+                new DisplayEntity.ItemDisplayEntity(EntityType.ITEM_DISPLAY, world);
+        itemDisplay.updatePosition(position.x, baseY + 1.0, position.z);
+        itemDisplay.setItemStack(new ItemStack(recipe.resultItem, 1));
+        itemDisplay.setInvulnerable(true);
+        world.spawnEntity(itemDisplay);
+
+        InteractionEntity hitbox = new InteractionEntity(EntityType.INTERACTION, world);
+        hitbox.updatePosition(position.x, baseY + 1.0, position.z);
+        hitbox.setInvulnerable(true);
+        world.spawnEntity(hitbox);
+
+        DisplayEntity.TextDisplayEntity nameDisplay =
+                new DisplayEntity.TextDisplayEntity(EntityType.TEXT_DISPLAY, world);
+        nameDisplay.updatePosition(position.x, baseY + 1.6, position.z);
+        nameDisplay.setText(Text.literal(recipe.displayName).formatted(recipe.nameColor, Formatting.BOLD));
+        nameDisplay.setBillboardMode(DisplayEntity.BillboardMode.CENTER);
+        nameDisplay.setInvulnerable(true);
+        world.spawnEntity(nameDisplay);
+
+        List<IngredientLine> lines = new ArrayList<>();
+        double y = baseY + 2.0;
+        List<CraftRecipe.Ingredient> reversed = new ArrayList<>(recipe.ingredients);
+        java.util.Collections.reverse(reversed);
+        for (CraftRecipe.Ingredient ingredient : reversed) {
+            DisplayEntity.TextDisplayEntity ingredientDisplay =
+                    new DisplayEntity.TextDisplayEntity(EntityType.TEXT_DISPLAY, world);
+            ingredientDisplay.updatePosition(position.x, y, position.z);
+            ingredientDisplay.setText(Text.literal(
+                    "x" + ingredient.count + " " + ingredient.item.getName().getString()
+            ).formatted(Formatting.RED));
+            ingredientDisplay.setBillboardMode(DisplayEntity.BillboardMode.CENTER);
+            ingredientDisplay.setInvulnerable(true);
+            world.spawnEntity(ingredientDisplay);
+
+            lines.add(0, new IngredientLine(ingredient, ingredientDisplay));
+            y += 0.3;
+        }
+
+        DisplayEntity.TextDisplayEntity headerDisplay =
+                new DisplayEntity.TextDisplayEntity(EntityType.TEXT_DISPLAY, world);
+        headerDisplay.updatePosition(position.x, y + 0.1, position.z);
+        headerDisplay.setText(Text.literal("Wymagane przedmioty:").formatted(Formatting.GOLD, Formatting.BOLD));
+        headerDisplay.setBillboardMode(DisplayEntity.BillboardMode.CENTER);
+        headerDisplay.setInvulnerable(true);
+        world.spawnEntity(headerDisplay);
+
+        Altar altar = new Altar(recipe, itemDisplay, hitbox, nameDisplay, headerDisplay, lines, position, chunkPos);
+        activeAltars.add(altar);
+    }
+
+    public static boolean tryCraft(ServerPlayerEntity player, InteractionEntity clickedHitbox) {
+        for (Altar altar : activeAltars) {
+            if (altar.hitbox != clickedHitbox) continue;
+
+            for (CraftRecipe.Ingredient ingredient : altar.recipe.ingredients) {
+                if (countItem(player, ingredient.item) < ingredient.count) {
+                    player.sendMessage(Text.literal("Nie masz wystarczajacej ilosci przedmiotow!").formatted(Formatting.RED), false);
+                    return false;
+                }
+            }
+
+            for (CraftRecipe.Ingredient ingredient : altar.recipe.ingredients) {
+                int remaining = ingredient.count;
+                for (int i = 0; i < player.getInventory().size() && remaining > 0; i++) {
+                    ItemStack stack = player.getInventory().getStack(i);
+                    if (stack.isOf(ingredient.item)) {
+                        int take = Math.min(remaining, stack.getCount());
+                        stack.decrement(take);
+                        remaining -= take;
                     }
                 }
             }
+
+            ServerWorld world = (ServerWorld) player.getEntityWorld();
+
+            ItemStack rewardStack = new ItemStack(altar.recipe.resultItem, 1);
+            rewardStack.set(DataComponentTypes.CUSTOM_NAME,
+                    Text.literal(altar.recipe.displayName).formatted(altar.recipe.nameColor, Formatting.BOLD));
+
+            if (!altar.recipe.enchantments.isEmpty()) {
+                var enchantRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.ENCHANTMENT);
+                for (CraftRecipe.EnchantEntry entry : altar.recipe.enchantments) {
+                    net.minecraft.enchantment.Enchantment enchantValue = enchantRegistry.get(entry.enchantment.getValue());
+                    if (enchantValue != null) {
+                        RegistryEntry<net.minecraft.enchantment.Enchantment> enchantEntry = enchantRegistry.getEntry(enchantValue);
+                        EnchantmentHelper.apply(rewardStack, builder -> builder.add(enchantEntry, entry.level));
+                    }
+                }
+            }
+
+            if (!altar.recipe.lore.isEmpty()) {
+                List<Text> loreLines = new ArrayList<>();
+                for (String line : altar.recipe.lore) {
+                    loreLines.add(Text.literal(line).formatted(Formatting.GRAY, Formatting.ITALIC));
+                }
+                rewardStack.set(DataComponentTypes.LORE, new LoreComponent(loreLines));
+            }
+
+            player.getInventory().insertStack(rewardStack);
+
+            world.playSound(null, player.getBlockPos(), SoundEvents.ENTITY_WITHER_SPAWN,
+                    SoundCategory.HOSTILE, 1.0f, 1.0f);
+
+            for (ServerPlayerEntity p : world.getPlayers()) {
+                p.sendMessage(Text.literal(player.getName().getString() + " stworzyl legendarna bron "
+                        + altar.recipe.displayName).formatted(Formatting.GOLD), false);
+            }
+
+            cleanupAltar(world, altar);
+            activeAltars.remove(altar);
             return true;
-        });
+        }
+        return false;
+    }
 
-        ServerPlayerEvents.COPY_FROM.register((oldPlayer, newPlayer, alive) -> {
-            UUID id = oldPlayer.getUuid();
-            List<ItemStack> saved = PARDONED_ITEMS.remove(id);
-            if (saved != null) {
-                for (ItemStack stack : saved) {
-                    if (!newPlayer.getInventory().insertStack(stack)) {
-                        newPlayer.dropItem(stack, false);
-                    }
+    public static boolean removeAltarByName(String name) {
+        Iterator<Altar> it = activeAltars.iterator();
+        boolean removedAny = false;
+        while (it.hasNext()) {
+            Altar altar = it.next();
+            if (!altar.recipe.displayName.equalsIgnoreCase(name)) continue;
+
+            ServerWorld world = (ServerWorld) altar.itemDisplay.getEntityWorld();
+            cleanupAltar(world, altar);
+            it.remove();
+            removedAny = true;
+        }
+        return removedAny;
+    }
+
+    private static void releaseChunk(ServerWorld world, Altar altar) {
+        world.setChunkForced(altar.chunkPos.x, altar.chunkPos.z, false);
+    }
+
+    private static class IngredientLine {
+        final CraftRecipe.Ingredient ingredient;
+        final DisplayEntity.TextDisplayEntity textDisplay;
+
+        IngredientLine(CraftRecipe.Ingredient ingredient, DisplayEntity.TextDisplayEntity textDisplay) {
+            this.ingredient = ingredient;
+            this.textDisplay = textDisplay;
+        }
+    }
+
+    private static class Altar {
+        final CraftRecipe recipe;
+        final DisplayEntity.ItemDisplayEntity itemDisplay;
+        final InteractionEntity hitbox;
+        final DisplayEntity.TextDisplayEntity nameDisplay;
+        final DisplayEntity.TextDisplayEntity headerDisplay;
+        final List<IngredientLine> ingredientLines;
+        final Vec3d center;
+        final ChunkPos chunkPos;
+        float spinAngle = 0f;
+
+        Altar(CraftRecipe recipe, DisplayEntity.ItemDisplayEntity itemDisplay, InteractionEntity hitbox,
+              DisplayEntity.TextDisplayEntity nameDisplay, DisplayEntity.TextDisplayEntity headerDisplay,
+              List<IngredientLine> ingredientLines, Vec3d center, ChunkPos chunkPos) {
+            this.recipe = recipe;
+            this.itemDisplay = itemDisplay;
+            this.hitbox = hitbox;
+            this.nameDisplay = nameDisplay;
+            this.headerDisplay = headerDisplay;
+            this.ingredientLines = ingredientLines;
+            this.center = center;
+            this.chunkPos = chunkPos;
+        }
+    }
                 }
-                LOGGER.info("[SupplyMod] Zwrocono {} przedmiot(y) chronione Ksiega Ulaskawienia dla {}",
-                        saved.size(), newPlayer.getName().getString());
-            }
-        });
-
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            ServerPlayerEntity player = handler.getPlayer();
-            CraftAltarManager.refreshTrackingOnJoin((ServerWorld) player.getEntityWorld());
-        });
-
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(
-                    CommandManager.literal("crafting")
-                            .then(CommandManager.literal("remove")
-                                    .then(CommandManager.argument("name", StringArgumentType.string())
-                                            .executes(ctx -> {
-                                                String name = StringArgumentType.getString(ctx, "name");
-                                                boolean removed = CraftAltarManager.removeAltarByName(name);
-                                                if (removed) {
-                                                    ctx.getSource().sendFeedback(() -> Text.literal("Usunieto oltarz: " + name), false);
-                                                    return 1;
-                                                } else {
-                                                    ctx.getSource().sendError(Text.literal("Nie znaleziono oltarza o nazwie: " + name));
-                                                    return 0;
-                                                }
-                                            })
-                                    )
-                            )
-                            .then(CommandManager.argument("name", StringArgumentType.string())
-                                    .then(CommandManager.argument("result", StringArgumentType.string())
-                                            .then(CommandManager.argument("ingredients", StringArgumentType.greedyString())
-                                                    .executes(ctx -> {
-                                                        ServerPlayerEntity player = ctx.getSource().getPlayer();
-                                                        if (player == null) return 0;
-
-                                                        String name = StringArgumentType.getString(ctx, "name");
-                                                        String resultId = StringArgumentType.getString(ctx, "result");
-                                                        String ingredientsRaw = StringArgumentType.getString(ctx, "ingredients");
-
-                                                        Item resultItem = Registries.ITEM.get(Identifier.of(resultId));
-                                                        if (resultItem == net.minecraft.item.Items.AIR) {
-                                                            ctx.getSource().sendError(Text.literal("Nieznany przedmiot: " + resultId));
-                                                            return 0;
-                                                        }
-
-                                                        Formatting nameColor = Formatting.GOLD;
-                                                        List<CraftRecipe.Ingredient> ingredients = new ArrayList<>();
-                                                        List<CraftRecipe.EnchantEntry> enchantments = new ArrayList<>();
-                                                        List<String> lore = new ArrayList<>();
-
-                                                        for (String token : ingredientsRaw.trim().split("\\s+")) {
-                                                            if (token.toLowerCase().startsWith("color:")) {
-                                                                String colorName = token.substring("color:".length());
-                                                                Formatting parsed = Formatting.byName(colorName);
-                                                                if (parsed == null) {
-                                                                    ctx.getSource().sendError(Text.literal("Nieznany kolor: " + colorName));
-                                                                    return 0;
-                                                                }
-                                                                nameColor = parsed;
-                                                                continue;
-                                                            }
-
-                                                            if (token.toLowerCase().startsWith("enchant:")) {
-                                                                String[] enchParts = token.substring("enchant:".length()).split(":");
-                                                                if (enchParts.length != 2) {
-                                                                    ctx.getSource().sendError(Text.literal("Zly format zaklecia: " + token
-                                                                            + " (oczekiwano enchant:nazwa:poziom)"));
-                                                                    return 0;
-                                                                }
-                                                                RegistryKey<Enchantment> enchantKey = RegistryKey.of(
-                                                                        RegistryKeys.ENCHANTMENT, Identifier.of("minecraft", enchParts[0]));
-                                                                int level;
-                                                                try {
-                                                                    level = Integer.parseInt(enchParts[1]);
-                                                                } catch (NumberFormatException e) {
-                                                                    ctx.getSource().sendError(Text.literal("Zly poziom zaklecia w: " + token));
-                                                                    return 0;
-                                                                }
-                                                                enchantments.add(new CraftRecipe.EnchantEntry(enchantKey, level));
-                                                                continue;
-                                                            }
-
-                                                            if (token.toLowerCase().startsWith("lore:")) {
-                                                                String loreText = token.substring("lore:".length()).replace('_', ' ');
-                                                                lore.add(loreText);
-                                                                continue;
-                                                            }
-
-                                                            String[] parts = token.split(":");
-                                                            Identifier itemId;
-                                                            int countIndex;
-                                                            if (parts.length == 3) {
-                                                                itemId = Identifier.of(parts[0], parts[1]);
-                                                                countIndex = 2;
-                                                            } else if (parts.length == 2) {
-                                                                itemId = Identifier.of("minecraft", parts[0]);
-                                                                countIndex = 1;
-                                                            } else {
-                                                                ctx.getSource().sendError(Text.literal("Zly format skladnika: " + token
-                                                                        + " (oczekiwano item:ilosc lub namespace:item:ilosc)"));
-                                                                return 0;
-                                                            }
-                                                            Item ingredientItem = Registries.ITEM.get(itemId);
-                                                            if (ingredientItem == net.minecraft.item.Items.AIR) {
-                                                                ctx.getSource().sendError(Text.literal("Nieznany skladnik: " + itemId));
-                                                                return 0;
-                                                            }
-                                                            int count;
-                                                            try {
-                                                                count = Integer.parseInt(parts[countIndex]);
-                                                            } catch (NumberFormatException e) {
-                                                                ctx.getSource().sendError(Text.literal("Zla ilosc dla: " + token));
-                                                                return 0;
-                                                            }
-                                                            ingredients.add(new CraftRecipe.Ingredient(ingredientItem, count));
-                                                        }
-
-                                                        CraftRecipe recipe = new CraftRecipe(resultItem, name, nameColor, ingredients, enchantments, lore);
-                                                        CraftAltarManager.spawnAltar(
-                                                                (ServerWorld) player.getEntityWorld(),
-                                                                recipe,
-                                                                new Vec3d(player.getX(), player.getY(), player.getZ()));
-
-                                                        ctx.getSource().sendFeedback(() -> Text.literal("Utworzono oltarz craftingowy: " + name), false);
-                                                        return 1;
-                                                    })
-                                            )
-                                    )
-                            )
-            );
-        });
-
-        UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if (entity instanceof InteractionEntity interaction && player instanceof ServerPlayerEntity serverPlayer) {
-                boolean crafted = CraftAltarManager.tryCraft(serverPlayer, interaction);
-                return crafted ? ActionResult.SUCCESS : ActionResult.PASS;
-            }
-            return ActionResult.PASS;
-        });
-    }
-
-    public static List<ItemStack> stashFor(UUID playerId) {
-        return PARDONED_ITEMS.computeIfAbsent(playerId, k -> new ArrayList<>());
-    }
-                                              }
