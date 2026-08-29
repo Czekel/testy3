@@ -44,8 +44,10 @@ import java.util.List;
  * in it. If any of an altar's entities were removed outside of this
  * manager (e.g. a manual /kill in-game instead of /crafting remove), that
  * altar is detected and cleaned up on the next tick instead of being
- * touched further. Player (re)joins also force a chunk refresh to make
- * sure the client re-syncs the altar's entities after a disconnect.
+ * touched further. On player (re)join, every altar is fully torn down and
+ * respawned with brand-new entity IDs, since a rejoining client can lose
+ * track of previously-known invisible/display entities and never fixing
+ * that is worse than a brief re-render flicker.
  */
 public class CraftAltarManager {
 
@@ -84,10 +86,20 @@ public class CraftAltarManager {
     }
 
     public static void refreshTrackingOnJoin(ServerWorld world) {
+        List<Altar> toRebuild = new ArrayList<>();
         for (Altar altar : activeAltars) {
             if (altar.itemDisplay.getEntityWorld() != world) continue;
-            world.setChunkForced(altar.chunkPos.x, altar.chunkPos.z, false);
-            world.setChunkForced(altar.chunkPos.x, altar.chunkPos.z, true);
+            toRebuild.add(altar);
+        }
+
+        for (Altar altar : toRebuild) {
+            Vec3d position = new Vec3d(altar.center.x, altar.center.y, altar.center.z);
+            CraftRecipe recipe = altar.recipe;
+
+            cleanupAltar(world, altar);
+            activeAltars.remove(altar);
+
+            spawnAltar(world, recipe, position);
         }
     }
 
@@ -328,4 +340,4 @@ public class CraftAltarManager {
             this.chunkPos = chunkPos;
         }
     }
-                }
+    }
