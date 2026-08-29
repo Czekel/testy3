@@ -7,6 +7,7 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.enchantment.Enchantment;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
@@ -96,6 +97,11 @@ public class SupplyMod implements ModInitializer {
             }
         });
 
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            ServerPlayerEntity player = handler.getPlayer();
+            CraftAltarManager.refreshTrackingOnJoin((ServerWorld) player.getEntityWorld());
+        });
+
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(
                     CommandManager.literal("crafting")
@@ -175,20 +181,27 @@ public class SupplyMod implements ModInitializer {
                                                             }
 
                                                             String[] parts = token.split(":");
-                                                            if (parts.length != 3) {
+                                                            Identifier itemId;
+                                                            int countIndex;
+                                                            if (parts.length == 3) {
+                                                                itemId = Identifier.of(parts[0], parts[1]);
+                                                                countIndex = 2;
+                                                            } else if (parts.length == 2) {
+                                                                itemId = Identifier.of("minecraft", parts[0]);
+                                                                countIndex = 1;
+                                                            } else {
                                                                 ctx.getSource().sendError(Text.literal("Zly format skladnika: " + token
-                                                                        + " (oczekiwano namespace:item:ilosc)"));
+                                                                        + " (oczekiwano item:ilosc lub namespace:item:ilosc)"));
                                                                 return 0;
                                                             }
-                                                            Identifier itemId = Identifier.of(parts[0], parts[1]);
                                                             Item ingredientItem = Registries.ITEM.get(itemId);
                                                             if (ingredientItem == net.minecraft.item.Items.AIR) {
-                                                                ctx.getSource().sendError(Text.literal("Nieznany skladnik: " + parts[0] + ":" + parts[1]));
+                                                                ctx.getSource().sendError(Text.literal("Nieznany skladnik: " + itemId));
                                                                 return 0;
                                                             }
                                                             int count;
                                                             try {
-                                                                count = Integer.parseInt(parts[2]);
+                                                                count = Integer.parseInt(parts[countIndex]);
                                                             } catch (NumberFormatException e) {
                                                                 ctx.getSource().sendError(Text.literal("Zla ilosc dla: " + token));
                                                                 return 0;
@@ -223,4 +236,4 @@ public class SupplyMod implements ModInitializer {
     public static List<ItemStack> stashFor(UUID playerId) {
         return PARDONED_ITEMS.computeIfAbsent(playerId, k -> new ArrayList<>());
     }
-                                                    }
+                                                                    }
